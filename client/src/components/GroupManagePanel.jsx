@@ -158,7 +158,6 @@ export default function GroupManagePanel({ groupId, members, onClose, onMembersC
                 </div>
                 <div className="gm-member-info">
                   <span className="gm-member-name">{m.display_name}</span>
-                  <span className="gm-member-dept">{m.department}</span>
                 </div>
 
                 <div className="gm-member-actions">

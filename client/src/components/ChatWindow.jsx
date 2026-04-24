@@ -25,6 +25,7 @@ export default function ChatWindow() {
   const [recordMs, setRecordMs] = useState(0);
   const [members, setMembers] = useState([]);
   const bottomRef = useRef(null);
+  const msgAreaRef = useRef(null);
   const inputRef = useRef(null);
   const albumRef = useRef(null);
   const cameraRef = useRef(null);
@@ -32,15 +33,18 @@ export default function ChatWindow() {
   const recordTimerRef = useRef(null);
   const socket = getSocket();
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  function scrollToBottom() {
+    const el = msgAreaRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+
+  useEffect(() => { scrollToBottom(); }, [messages]);
 
   // Scroll to bottom when mobile keyboard opens
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    const onResize = () => {
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-    };
+    const onResize = () => { setTimeout(scrollToBottom, 50); };
     vv.addEventListener('resize', onResize);
     return () => vv.removeEventListener('resize', onResize);
   }, []);
@@ -197,7 +201,7 @@ export default function ChatWindow() {
       )}
 
       {/* ── Messages ── */}
-      <div className="messages-area" onClick={closeAll}>
+      <div className="messages-area" ref={msgAreaRef} onClick={closeAll}>
         {messages.map((msg, i) => {
           const isMine = msg.sender_id === currentUser?.id;
           const prevMsg = messages[i - 1];
@@ -261,7 +265,7 @@ export default function ChatWindow() {
                 value={input}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                onFocus={() => setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 300)}
+                onFocus={() => setTimeout(scrollToBottom, 300)}
                 rows={1}
                 disabled={isMuted}
               />
