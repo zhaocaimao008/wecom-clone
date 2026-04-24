@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>企业微信 · 管理后台</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#07c160;--green-dark:#059a4c;--green-light:#e8f8ef;
+  --sidebar:#1a1f2e;--sidebar-item:#c8cdd8;--sidebar-active:rgba(7,193,96,.15);
+  --header:#fff;--body-bg:#f0f2f5;--card:#fff;
+  --text:#333;--text-muted:#888;--border:#e5e7eb;
+  --danger:#e64340;--warn:#fa9d3b;--info:#576b95;
+  --radius:8px;--shadow:0 2px 12px rgba(0,0,0,.08);
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;color:var(--text);background:var(--body-bg)}
+
+/* ─── LOGIN ─────────────────────────────────────────────────── */
+#login-wrap{display:none;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#e8f8ef 0%,#d1f0e0 50%,#b3e6cc 100%)}
+#login-wrap.show{display:flex}
+.login-card{background:#fff;border-radius:16px;box-shadow:0 8px 40px rgba(0,0,0,.12);padding:40px 36px;width:360px;max-width:90vw}
+.login-logo{text-align:center;margin-bottom:28px}
+.login-logo h1{font-size:20px;font-weight:600;color:var(--text)}
+.login-logo p{font-size:13px;color:var(--text-muted);margin-top:4px}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:13px;color:#555;margin-bottom:5px;font-weight:500}
+.form-group input{width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none;transition:.2s}
+.form-group input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(7,193,96,.12)}
+.btn-login{width:100%;padding:12px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;transition:.2s;margin-top:6px}
+.btn-login:hover{background:var(--green-dark)}
+.btn-login:active{transform:scale(.98)}
+.btn-login:disabled{opacity:.6;cursor:not-allowed}
+.login-err{background:#fff2f0;border:1px solid #ffccc7;color:#cf1322;padding:8px 12px;border-radius:6px;font-size:13px;margin-bottom:12px;display:none}
+
+/* ─── LAYOUT ─────────────────────────────────────────────────── */
+#app{display:none;height:100dvh;flex-direction:row;overflow:hidden}
+#app.show{display:flex}
+
+/* Sidebar */
+.sidebar{width:220px;background:var(--sidebar);display:flex;flex-direction:column;flex-shrink:0;height:100vh;position:relative;z-index:10;transition:transform .28s ease}
+.sidebar-logo{padding:18px 16px 14px;border-bottom:1px solid rgba(255,255,255,.06)}
+.sidebar-logo .brand{display:flex;align-items:center;gap:10px}
+.sidebar-logo .brand-icon{width:32px;height:32px;background:var(--green);border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sidebar-logo .brand-icon svg{fill:#fff;width:18px;height:18px}
+.sidebar-logo .brand-text{font-size:13.5px;font-weight:600;color:#fff;line-height:1.3}
+.sidebar-logo .brand-sub{font-size:11px;color:rgba(255,255,255,.4)}
+.sidebar-nav{flex:1;padding:10px 0;overflow-y:auto;overflow-x:hidden}
+.nav-section{padding:14px 16px 4px;font-size:10.5px;color:rgba(255,255,255,.28);letter-spacing:.08em;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:9px;padding:9px 14px;cursor:pointer;color:var(--sidebar-item);transition:.15s;position:relative;margin:1px 6px;border-radius:6px}
+.nav-item:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav-item.active{background:var(--sidebar-active);color:var(--green)}
+.nav-item.active::before{content:'';position:absolute;left:0;top:6px;bottom:6px;width:3px;background:var(--green);border-radius:0 2px 2px 0}
+.nav-item svg{width:17px;height:17px;flex-shrink:0;opacity:.85}
+.nav-item span{font-size:13px;font-weight:500;white-space:nowrap}
+.sidebar-bottom{padding:10px 14px;border-top:1px solid rgba(255,255,255,.06)}
+.user-card{display:flex;align-items:center;gap:9px}
+.user-avatar{width:30px;height:30px;background:var(--green);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
+.user-info{flex:1;min-width:0}
+.user-name{font-size:12.5px;color:#fff;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.user-role{font-size:10.5px;color:rgba(255,255,255,.35)}
+.btn-logout{width:26px;height:26px;background:rgba(255,255,255,.07);border:none;border-radius:5px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.45);transition:.15s;flex-shrink:0}
+.btn-logout:hover{background:rgba(255,255,255,.15);color:#fff}
+.btn-logout svg{width:14px;height:14px}
+
+/* Main area */
+.main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh;overflow:hidden}
+
+/* Header */
+.header{background:var(--header);border-bottom:1px solid var(--border);padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.header-left{display:flex;align-items:center;gap:12px}
+.hamburger{display:none;width:32px;height:32px;background:none;border:none;border-radius:6px;cursor:pointer;align-items:center;justify-content:center;flex-shrink:0}
+.hamburger svg{width:20px;height:20px;fill:var(--text)}
+.header-title{font-size:16px;font-weight:600;color:var(--text)}
+.header-right{display:flex;align-items:center;gap:10px}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:500}
+.badge-green{background:var(--green-light);color:var(--green-dark)}
+.badge-gray{background:#f0f0f0;color:#666}
+
+/* Content */
+.content{flex:1;overflow-y:auto;overflow-x:hidden;padding:20px 24px}
+
+/* Stats */
+.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
+.stat-card{background:var(--card);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);display:flex;align-items:center;gap:14px;transition:.2s}
+.stat-card:hover{box-shadow:0 4px 18px rgba(0,0,0,.1);transform:translateY(-1px)}
+.stat-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.stat-icon svg{width:24px;height:24px;fill:#fff}
+.stat-icon.green{background:linear-gradient(135deg,#07c160,#05a34e)}
+.stat-icon.blue{background:linear-gradient(135deg,#576b95,#3d5279)}
+.stat-icon.orange{background:linear-gradient(135deg,#fa9d3b,#e07c1a)}
+.stat-icon.red{background:linear-gradient(135deg,#e64340,#c73330)}
+.stat-icon.teal{background:linear-gradient(135deg,#10aec2,#0b879a)}
+.stat-icon.purple{background:linear-gradient(135deg,#9b59b6,#7d4099)}
+.stat-icon.pink{background:linear-gradient(135deg,#f06292,#c2185b)}
+.stat-num{font-size:24px;font-weight:700;color:var(--text);line-height:1}
+.stat-label{font-size:12.5px;color:var(--text-muted);margin-top:3px}
+
+/* Card */
+.card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:18px}
+.card-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.card-title{font-size:14.5px;font-weight:600;color:var(--text)}
+.card-body{padding:14px 18px}
+
+/* Toolbar */
+.toolbar{display:flex;align-items:center;gap:9px;margin-bottom:14px;flex-wrap:wrap}
+.search-box{display:flex;align-items:center;background:#f5f5f5;border:1.5px solid transparent;border-radius:8px;padding:0 11px;height:34px;flex:1;max-width:280px;transition:.2s}
+.search-box:focus-within{background:#fff;border-color:var(--green)}
+.search-box svg{width:14px;height:14px;fill:#aaa;flex-shrink:0}
+.search-box input{border:none;background:transparent;outline:none;font-size:13px;padding:0 7px;width:100%;color:var(--text)}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 13px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;border:none;transition:.15s;white-space:nowrap}
+.btn svg{width:13px;height:13px}
+.btn-primary{background:var(--green);color:#fff}
+.btn-primary:hover{background:var(--green-dark)}
+.btn-sm{padding:4px 9px;font-size:12px;border-radius:5px}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-danger:hover{background:#c73330}
+.btn-warn{background:var(--warn);color:#fff}
+.btn-warn:hover{background:#d97d1a}
+.btn-gray{background:#f0f0f0;color:#555}
+.btn-gray:hover{background:#e0e0e0}
+.btn-outline{background:#fff;color:var(--green);border:1.5px solid var(--green)}
+.btn-outline:hover{background:var(--green-light)}
+.btn:disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
+
+/* Table */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:600px}
+thead th{background:#fafafa;padding:9px 12px;text-align:left;font-size:12px;color:#666;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr{border-bottom:1px solid #f5f5f5;transition:.15s}
+tbody tr:hover{background:#fafeff}
+tbody tr:last-child{border-bottom:none}
+td{padding:9px 12px;font-size:13px;vertical-align:middle}
+.td-actions{display:flex;gap:5px;flex-wrap:wrap}
+
+/* Tags */
+.tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:11.5px;font-weight:500}
+.tag-green{background:#e8f8ef;color:#059a4c}
+.tag-red{background:#fff2f0;color:#cf1322}
+.tag-gray{background:#f5f5f5;color:#888}
+.tag-orange{background:#fff7e6;color:#d46b08}
+.tag-blue{background:#e6f0fb;color:#3d5279}
+.tag-yellow{background:#fffbe6;color:#d48806}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px}
+.dot-green{background:#07c160}
+.dot-gray{background:#ccc}
+
+/* Pagination */
+.pagination{display:flex;align-items:center;gap:5px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+.pg-info{font-size:12.5px;color:var(--text-muted);margin-right:4px}
+.pg-btn{width:28px;height:28px;border-radius:5px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:.15s}
+.pg-btn:hover:not(.active):not(:disabled){border-color:var(--green);color:var(--green)}
+.pg-btn.active{background:var(--green);color:#fff;border-color:var(--green)}
+.pg-btn:disabled{opacity:.35;cursor:not-allowed}
+
+/* Empty */
+.empty{text-align:center;padding:36px 16px;color:var(--text-muted)}
+.empty svg{width:40px;height:40px;fill:#ddd;margin-bottom:10px}
+.empty p{font-size:13.5px}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-overlay.show{display:flex}
+.modal{background:#fff;border-radius:12px;padding:24px;width:380px;max-width:100%;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal h3{font-size:16px;font-weight:600;margin-bottom:8px}
+.modal p{font-size:13.5px;color:#555;line-height:1.6;margin-bottom:18px}
+.modal-actions{display:flex;justify-content:flex-end;gap:9px}
+.modal .form-group{margin-bottom:12px}
+.modal .btn{padding:7px 16px}
+
+/* Toast */
+.toast-wrap{position:fixed;top:16px;right:16px;z-index:2000;display:flex;flex-direction:column;gap:7px;pointer-events:none}
+.toast{background:#333;color:#fff;padding:9px 14px;border-radius:8px;font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.2);animation:toastIn .25s ease;pointer-events:auto;display:flex;align-items:center;gap:7px;max-width:300px}
+.toast.success{background:#07c160}
+.toast.error{background:#e64340}
+.toast.warn{background:#fa9d3b}
+@keyframes toastIn{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+
+/* Recent messages */
+.msg-list{list-style:none}
+.msg-list li{display:flex;align-items:flex-start;gap:9px;padding:9px 0;border-bottom:1px solid #f5f5f5}
+.msg-list li:last-child{border-bottom:none}
+.msg-avatar{width:32px;height:32px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
+.msg-info{flex:1;min-width:0}
+.msg-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
+.msg-sender{font-size:12.5px;font-weight:600;color:var(--text)}
+.msg-time{font-size:11px;color:var(--text-muted)}
+.msg-content{font-size:12.5px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msg-recalled{color:var(--text-muted);font-style:italic}
+
+/* Invite code page */
+.code-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:14px}
+.code-card{background:#fafafa;border:1px solid var(--border);border-radius:8px;padding:14px 16px;transition:.2s}
+.code-card:hover{border-color:var(--green);background:#f8fff9}
+.code-card.used{border-color:#ffe7b0;background:#fffbe6}
+.code-card.expired{border-color:#f0f0f0;background:#fafafa;opacity:.7}
+.code-value{font-family:monospace;font-size:18px;font-weight:700;color:var(--green);letter-spacing:.1em;margin-bottom:6px;word-break:break-all}
+.code-meta{font-size:12px;color:var(--text-muted);line-height:1.7}
+.code-actions{display:flex;gap:6px;margin-top:10px}
+
+/* Generate modal form */
+.gen-form{display:flex;flex-direction:column;gap:12px}
+.gen-row{display:flex;gap:10px;flex-wrap:wrap}
+.gen-field{flex:1;min-width:120px}
+.gen-field label{display:block;font-size:12.5px;color:#555;margin-bottom:4px;font-weight:500}
+.gen-field input{width:100%;padding:8px 11px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;outline:none}
+.gen-field input:focus{border-color:var(--green)}
+
+/* Section visibility */
+.section{display:none}
+.section.active{display:block}
+
+/* ─── RESPONSIVE ─────────────────────────────────────────────── */
+@media(max-width:768px){
+  .hamburger{display:flex}
+
+  .sidebar{
+    position:fixed;left:0;top:0;bottom:0;
+    transform:translateX(-100%);
+    width:260px;
+    box-shadow:4px 0 20px rgba(0,0,0,.15);
+  }
+  .sidebar.open{transform:translateX(0)}
+
+  .sidebar-overlay{
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9;
+  }
+  .sidebar-overlay.show{display:block}
+
+  .header-left{flex:1}
+  .header-title{font-size:15px}
+
+  .content{padding:16px}
+  .stats-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  .stat-card{padding:13px 14px}
+  .stat-num{font-size:20px}
+
+  .card-header{flex-direction:column;align-items:flex-start}
+  .card-body{padding:12px 14px}
+
+  table{font-size:12.5px}
+  thead th{padding:7px 9px}
+  td{padding:7px 9px}
+
+  .modal{width:100%;padding:20px 18px}
+}
+
+@media(max-width:480px){
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .stat-card{gap:10px;padding:12px}
+  .stat-icon{width:36px;height:36px;border-radius:8px}
+  .stat-icon svg{width:20px;height:20px}
+  .stat-num{font-size:18px}
+  .badge{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ─── LOGIN ──────────────────────────────────────────────────── -->
+<div id="login-wrap">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg viewBox="0 0 24 24" style="width:48px;height:48px;fill:#07c160;margin-bottom:10px"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
+      <h1>企业微信管理后台</h1>
+      <p>WeCom Admin Console</p>
+    </div>
+    <div class="login-err" id="login-err"></div>
+    <div class="form-group">
+      <label>管理员账号</label>
+      <input type="text" id="inp-user" placeholder="请输入账号" value="admin" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>登录密码</label>
+      <input type="password" id="inp-pass" placeholder="请输入密码" value="admin123" autocomplete="current-password">
+    </div>
+    <button class="btn-login" id="btn-login-submit" onclick="doLogin()">登 录</button>
+  </div>
+</div>
+
+<!-- ─── APP ────────────────────────────────────────────────────── -->
+<div id="app">
+
+  <!-- Mobile overlay -->
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar(false)"></div>
+
+  <!-- Sidebar -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
+        </div>
+        <div>
+          <div class="brand-text">企业微信</div>
+          <div class="brand-sub">管理后台</div>
+        </div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section">概览</div>
+      <div class="nav-item active" data-nav="dashboard" onclick="nav('dashboard',this)">
+        <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+        <span>数据概览</span>
+      </div>
+      <div class="nav-section">管理</div>
+      <div class="nav-item" data-nav="users" onclick="nav('users',this)">
+        <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+        <span>用户管理</span>
+      </div>
+      <div class="nav-item" data-nav="groups" onclick="nav('groups',this)">
+        <svg viewBox="0 0 24 24"><path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z"/></svg>
+        <span>群组管理</span>
+      </div>
+      <div class="nav-item" data-nav="messages" onclick="nav('messages',this)">
+        <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
+        <span>消息记录</span>
+      </div>
+      <div class="nav-item" data-nav="invites" onclick="nav('invites',this)">
+        <svg viewBox="0 0 24 24"><path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+        <span>邀请码管理</span>
+      </div>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="user-card">
+        <div class="user-avatar">管</div>
+        <div class="user-info">
+          <div class="user-name">超级管理员</div>
+          <div class="user-role">admin</div>
+        </div>
+        <button class="btn-logout" title="退出登录" onclick="doLogout()">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="header">
+      <div class="header-left">
+        <button class="hamburger" onclick="toggleSidebar(true)">
+          <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+        </button>
+        <div class="header-title" id="page-title">数据概览</div>
+      </div>
+      <div class="header-right">
+        <span class="badge badge-green" id="hdr-status">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>
+          系统正常
+        </span>
+        <span class="badge badge-gray" id="hdr-time"></span>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ── DASHBOARD ─────────────────────────────────────────── -->
+      <div class="section active" id="sec-dashboard">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon green"><svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg></div>
+            <div><div class="stat-num" id="s-users">-</div><div class="stat-label">注册用户</div></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon blue"><svg viewBox="0 0 24 24"><path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z"/></svg></div>
+            <div><div class="stat-num" id="s-groups">-</div><div class="stat-label">活跃群组</div></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon teal"><svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg></div>
+            <div><div class="stat-num" id="s-messages">-</div><div class="stat-label">总消息数</div></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon orange"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg></div>
+            <div><div class="stat-num" id="s-online">-</div><div class="stat-label">在线用户</div></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon purple"><svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z"/></svg></div>
+            <div><div class="stat-num" id="s-today">-</div><div class="stat-label">今日消息</div></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon pink"><svg viewBox="0 0 24 24"><path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>
+            <div><div class="stat-num" id="s-codes">-</div><div class="stat-label">邀请码总数</div></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon red"><svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg></div>
+            <div><div class="stat-num" id="s-disabled">-</div><div class="stat-label">已禁用用户</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">最新消息</span>
+            <button class="btn btn-sm btn-gray" onclick="nav('messages',document.querySelector('[data-nav=messages]'))">查看全部</button>
+          </div>
+          <div class="card-body" style="padding:0 18px">
+            <ul class="msg-list" id="recent-msgs"><li style="padding:18px 0;text-align:center;color:#aaa">加载中...</li></ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── USERS ──────────────────────────────────────────────── -->
+      <div class="section" id="sec-users">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">用户列表</span>
+            <button class="btn btn-primary btn-sm" onclick="loadUsers()">刷新</button>
+          </div>
+          <div class="card-body">
+            <div class="toolbar">
+              <div class="search-box">
+                <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                <input type="text" id="user-search" placeholder="搜索姓名/账号/部门..." oninput="filterUsers()">
+              </div>
+            </div>
+            <div class="tbl-wrap">
+              <table>
+                <thead><tr><th>ID</th><th>姓名</th><th>账号</th><th>部门</th><th>职位</th><th>手机</th><th>状态</th><th>注册时间</th><th>操作</th></tr></thead>
+                <tbody id="users-tbody"><tr><td colspan="9" style="text-align:center;padding:28px;color:#aaa">加载中...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── GROUPS ─────────────────────────────────────────────── -->
+      <div class="section" id="sec-groups">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">群组列表</span>
+            <button class="btn btn-primary btn-sm" onclick="loadGroups()">刷新</button>
+          </div>
+          <div class="card-body">
+            <div class="toolbar">
+              <div class="search-box">
+                <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                <input type="text" id="group-search" placeholder="搜索群名/创建者..." oninput="filterGroups()">
+              </div>
+            </div>
+            <div class="tbl-wrap">
+              <table>
+                <thead><tr><th>ID</th><th>群名称</th><th>创建者</th><th>成员</th><th>消息</th><th>公告</th><th>时间</th><th>操作</th></tr></thead>
+                <tbody id="groups-tbody"><tr><td colspan="8" style="text-align:center;padding:28px;color:#aaa">加载中...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── MESSAGES ───────────────────────────────────────────── -->
+      <div class="section" id="sec-messages">
+        <div class="card">
+          <div class="card-header"><span class="card-title">消息记录</span></div>
+          <div class="card-body">
+            <div class="toolbar">
+              <div class="search-box">
+                <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                <input type="text" id="msg-search" placeholder="搜索消息内容..." oninput="debounceLoadMsgs()">
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="loadMsgs(1)">搜索</button>
+            </div>
+            <div class="tbl-wrap">
+              <table>
+                <thead><tr><th>ID</th><th>发送者</th><th>内容</th><th>类型</th><th>聊天</th><th>接收方</th><th>时间</th><th>状态</th><th>操作</th></tr></thead>
+                <tbody id="msgs-tbody"><tr><td colspan="9" style="text-align:center;padding:28px;color:#aaa">加载中...</td></tr></tbody>
+              </table>
+            </div>
+            <div class="pagination" id="msg-pagination"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── INVITE CODES ─────────────────────────────────────────── -->
+      <div class="section" id="sec-invites">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">邀请码管理</span>
+            <button class="btn btn-primary btn-sm" onclick="openGenModal()">
+              <svg viewBox="0 0 24 24" fill="currentColor" style="width:13px;height:13px"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+              生成邀请码
+            </button>
+          </div>
+          <div class="card-body">
+            <div class="toolbar">
+              <div class="search-box">
+                <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                <input type="text" id="code-search" placeholder="搜索邀请码..." oninput="filterCodes()">
+              </div>
+              <button class="btn btn-gray btn-sm" onclick="loadCodes()">刷新</button>
+            </div>
+            <div class="code-grid" id="codes-grid"><div class="empty"><p>加载中...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ─── MODAL ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-title">确认操作</h3>
+    <p id="modal-body">确定要执行此操作吗？</p>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal()">取消</button>
+      <button class="btn btn-danger" id="modal-confirm">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generate codes modal -->
+<div class="modal-overlay" id="gen-modal-overlay">
+  <div class="modal" style="width:420px">
+    <h3>生成邀请码</h3>
+    <div class="gen-form">
+      <div class="gen-row">
+        <div class="gen-field">
+          <label>有效期（天）</label>
+          <input type="number" id="gen-days" value="7" min="1" max="365">
+        </div>
+        <div class="gen-field">
+          <label>生成数量</label>
+          <input type="number" id="gen-count" value="1" min="1" max="100">
+        </div>
+      </div>
+      <div id="gen-result" style="display:none">
+        <div style="font-size:13px;color:#555;margin-bottom:6px">生成的邀请码：</div>
+        <div id="gen-codes-list" style="font-family:monospace;font-size:15px;font-weight:600;color:var(--green);word-break:break-all;background:#f5f9ff;padding:10px;border-radius:6px;line-height:1.7"></div>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn btn-gray" onclick="closeGenModal()">关闭</button>
+      <button class="btn btn-primary" id="btn-gen-submit" onclick="genCodes()">生成</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── TOASTS ─────────────────────────────────────────────────── -->
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+const TOKEN_KEY = 'wk_admin_tk';
+let token = localStorage.getItem(TOKEN_KEY) || '';
+
+// ─── Helpers ───────────────────────────────────────────────────
+function api(method, url, body) {
+  return fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'x-token': token },
+    body: body ? JSON.stringify(body) : undefined,
+  }).then(r => {
+    if (!r.ok) {
+      return r.json().catch(() => ({ error: `请求失败 (${r.status})` }))
+        .then(err => { throw err; });
+    }
+    return r.json();
+  });
+}
+
+function toast(msg, type = 'success') {
+  const d = document.createElement('div');
+  d.className = `toast ${type}`;
+  d.textContent = msg;
+  document.getElementById('toasts').appendChild(d);
+  setTimeout(() => d.remove(), 3200);
+}
+
+function fmtDate(s) {
+  if (!s) return '-';
+  const d = new Date(s);
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function pad(n) { return String(n).padStart(2,'0'); }
+
+function esc(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
+function truncate(s, n=38) {
+  if (!s) return '';
+  return s.length > n ? s.slice(0,n) + '…' : s;
+}
+
+let modalCallback = null;
+function confirm(title, body, btnText, cb) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').textContent = body;
+  const btn = document.getElementById('modal-confirm');
+  btn.textContent = btnText || '确认';
+  btn.className = btnText === '解散' || btnText === '删除' ? 'btn btn-danger' : 'btn btn-warn';
+  modalCallback = cb;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); }
+document.getElementById('modal-confirm').onclick = () => { closeModal(); if (modalCallback) modalCallback(); };
+document.getElementById('modal-overlay').onclick = e => { if (e.target === e.currentTarget) closeModal(); };
+
+function openGenModal() {
+  document.getElementById('gen-days').value = '7';
+  document.getElementById('gen-count').value = '1';
+  document.getElementById('gen-result').style.display = 'none';
+  document.getElementById('btn-gen-submit').style.display = 'inline-flex';
+  document.getElementById('gen-modal-overlay').classList.add('show');
+}
+function closeGenModal() { document.getElementById('gen-modal-overlay').classList.remove('show'); }
+document.getElementById('gen-modal-overlay').onclick = e => { if (e.target === e.currentTarget) closeGenModal(); };
+
+// ─── Clock ─────────────────────────────────────────────────────
+function updateClock() {
+  const d = new Date();
+  document.getElementById('hdr-time').textContent = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+setInterval(updateClock, 1000); updateClock();
+
+// ─── Sidebar toggle ─────────────────────────────────────────────
+function toggleSidebar(open) {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  if (open) {
+    sidebar.classList.add('open');
+    overlay.classList.add('show');
+  } else {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('show');
+  }
+}
+
+// ─── Auth ──────────────────────────────────────────────────────
+function doLogin() {
+  const u = document.getElementById('inp-user').value.trim();
+  const p = document.getElementById('inp-pass').value;
+  const err = document.getElementById('login-err');
+  const btn = document.getElementById('btn-login-submit');
+  btn.disabled = true; btn.textContent = '登录中...';
+  err.style.display = 'none';
+  api('POST', '/api/login', { username: u, password: p })
+    .then(r => {
+      if (r.token) {
+        token = r.token;
+        localStorage.setItem(TOKEN_KEY, token);
+        showApp();
+      } else {
+        err.textContent = r.error || '登录失败'; err.style.display = 'block';
+      }
+    })
+    .catch(() => { err.textContent = '网络错误，请重试'; err.style.display = 'block'; })
+    .finally(() => { btn.disabled = false; btn.textContent = '登 录'; });
+}
+document.getElementById('inp-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+function doLogout() {
+  api('POST', '/api/logout')
+    .then(r => {
+      if (r.ok) {
+        token = ''; localStorage.removeItem(TOKEN_KEY);
+        document.getElementById('app').classList.remove('show');
+        document.getElementById('login-wrap').classList.remove('show');
+      } else {
+        toast(r.error || '退出失败', 'error');
+      }
+    })
+    .catch(() => {
+      // Network error: still clear token and show login, but warn user
+      token = ''; localStorage.removeItem(TOKEN_KEY);
+      document.getElementById('app').classList.remove('show');
+      document.getElementById('login-wrap').classList.remove('show');
+      toast('网络错误，请重新登录', 'warn');
+    });
+}
+
+// ─── Navigation ────────────────────────────────────────────────
+const sections = { dashboard:'sec-dashboard', users:'sec-users', groups:'sec-groups', messages:'sec-messages', invites:'sec-invites' };
+const titles   = { dashboard:'数据概览', users:'用户管理', groups:'群组管理', messages:'消息记录', invites:'邀请码管理' };
+const loaders  = { dashboard:loadDashboard, users:loadUsers, groups:loadGroups, messages:()=>loadMsgs(1), invites:loadCodes };
+
+function nav(key, el) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById(sections[key]).classList.add('active');
+  document.getElementById('page-title').textContent = titles[key];
+  loaders[key]();
+  toggleSidebar(false);
+}
+
+function showApp() {
+  document.getElementById('login-wrap').classList.remove('show');
+  document.getElementById('app').classList.add('show');
+  loadDashboard();
+}
+
+function showLogin() {
+  document.getElementById('app').classList.remove('show');
+  document.getElementById('login-wrap').classList.add('show');
+}
+
+// ─── Dashboard ─────────────────────────────────────────────────
+function loadDashboard() {
+  api('GET', '/api/stats').then(s => {
+    document.getElementById('s-users').textContent    = s.users ?? '-';
+    document.getElementById('s-groups').textContent   = s.groups ?? '-';
+    document.getElementById('s-messages').textContent = s.messages ?? '-';
+    document.getElementById('s-online').textContent   = s.online ?? '-';
+    document.getElementById('s-today').textContent    = s.today_msgs ?? '-';
+    document.getElementById('s-disabled').textContent = s.disabled_users ?? '-';
+    document.getElementById('s-codes').textContent    = s.invite_codes ?? '-';
+  }).catch(() => toast('获取统计数据失败','error'));
+
+  api('GET', '/api/messages?size=8').then(r => {
+    const ul = document.getElementById('recent-msgs');
+    if (!r.rows || !r.rows.length) { ul.innerHTML = '<li style="padding:18px 0;text-align:center;color:#aaa">暂无消息</li>'; return; }
+    ul.innerHTML = r.rows.map(m => {
+      const colors = ['#07c160','#576b95','#fa9d3b','#e64340','#10aec2','#7d7d7d'];
+      const avatarColor = colors[m.id % colors.length];
+      const initial = (m.sender || '?')[0];
+      const content = m.recalled ? '<span class="msg-recalled">消息已撤回</span>' : `<span>${esc(truncate(m.content))}</span>`;
+      return `<li>
+        <div class="msg-avatar" style="background:${avatarColor}">${esc(initial)}</div>
+        <div class="msg-info">
+          <div class="msg-header">
+            <span class="msg-sender">${esc(m.sender||'未知')} <span style="font-weight:400;color:#999;font-size:11px"> → ${esc(m.target||'-')} [${esc(m.chat_type)}]</span></span>
+            <span class="msg-time">${fmtDate(m.created_at)}</span>
+          </div>
+          <div class="msg-content">${content}</div>
+        </div>
+      </li>`;
+    }).join('');
+  }).catch(() => toast('获取最近消息失败','error'));
+}
+
+// ─── Users ─────────────────────────────────────────────────────
+let allUsers = [];
+function loadUsers() {
+  const tbody = document.getElementById('users-tbody');
+  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:28px;color:#aaa">加载中...</td></tr>';
+  api('GET', '/api/users').then(rows => {
+    allUsers = rows;
+    renderUsers(rows);
+  }).catch(() => toast('获取用户列表失败','error'));
+}
+
+function renderUsers(rows) {
+  const tbody = document.getElementById('users-tbody');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:28px;color:#aaa">暂无用户</td></tr>'; return; }
+  tbody.innerHTML = rows.map(u => `
+    <tr>
+      <td><span style="color:#aaa;font-size:11.5px">#${u.id}</span></td>
+      <td><strong>${esc(u.display_name)}</strong></td>
+      <td><span style="color:#576b95">${esc(u.username)}</span></td>
+      <td>${esc(u.department||'-')}</td>
+      <td><span class="tag tag-blue">${esc(u.position||'-')}</span></td>
+      <td><span style="font-family:monospace;font-size:12px">${esc(u.phone||'-')}</span></td>
+      <td>${u.status==='online' ? '<span><span class="dot dot-green"></span>在线</span>' : '<span><span class="dot dot-gray"></span>离线</span>'}</td>
+      <td style="font-size:11.5px;color:#aaa">${fmtDate(u.created_at)}</td>
+      <td>
+        <button class="btn btn-sm ${u.disabled?'btn-outline':'btn-warn'}" onclick="toggleUser(${u.id},${!!u.disabled})">
+          ${u.disabled?'启用':'禁用'}
+        </button>
+      </td>
+    </tr>`).join('');
+}
+
+function filterUsers() {
+  const q = document.getElementById('user-search').value.toLowerCase();
+  renderUsers(q ? allUsers.filter(u =>
+    (u.display_name||'').toLowerCase().includes(q) ||
+    (u.username||'').toLowerCase().includes(q) ||
+    (u.department||'').toLowerCase().includes(q)
+  ) : allUsers);
+}
+
+function toggleUser(id, disabled) {
+  const user = allUsers.find(u => u.id === id);
+  const name = user ? user.display_name : `用户#${id}`;
+  const action = disabled ? '启用' : '禁用';
+  confirm(
+    `${action}用户`,
+    `确定要${action}用户「${name}」吗？${disabled ? '启用后该用户可正常登录。' : '禁用后该用户将无法登录。'}`,
+    action,
+    () => api('PUT', `/api/users/${id}/toggle`)
+      .then(r => { if (r.disabled !== undefined) { toast(`已${action}「${name}」`); loadUsers(); } else toast(r.error||'操作失败','error'); })
+      .catch(() => toast('操作失败','error'))
+  );
+}
+
+// ─── Groups ────────────────────────────────────────────────────
+let allGroups = [];
+function loadGroups() {
+  const tbody = document.getElementById('groups-tbody');
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:28px;color:#aaa">加载中...</td></tr>';
+  api('GET', '/api/groups').then(rows => {
+    allGroups = rows;
+    renderGroups(rows);
+  }).catch(() => toast('获取群组列表失败','error'));
+}
+
+function renderGroups(rows) {
+  const tbody = document.getElementById('groups-tbody');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:28px;color:#aaa">暂无群组</td></tr>'; return; }
+  tbody.innerHTML = rows.map(g => `
+    <tr>
+      <td><span style="color:#aaa;font-size:11.5px">#${g.id}</span></td>
+      <td><strong>${esc(g.name)}</strong></td>
+      <td>${esc(g.owner_name||'-')}</td>
+      <td><span class="tag tag-blue">${g.members} 人</span></td>
+      <td>${g.msg_count} 条</td>
+      <td style="max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#888">${esc(g.announcement||'-')}</td>
+      <td style="font-size:11.5px;color:#aaa">${fmtDate(g.created_at)}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="dissolveGroup(${g.id})">解散</button></td>
+    </tr>`).join('');
+}
+
+function filterGroups() {
+  const q = document.getElementById('group-search').value.toLowerCase();
+  renderGroups(q ? allGroups.filter(g =>
+    (g.name||'').toLowerCase().includes(q) ||
+    (g.owner_name||'').toLowerCase().includes(q)
+  ) : allGroups);
+}
+
+function dissolveGroup(id) {
+  const g = allGroups.find(x => x.id === id);
+  const name = g ? g.name : `群组#${id}`;
+  confirm(
+    '解散群组',
+    `确定要解散群组「${name}」吗？此操作不可恢复，群内所有消息将被删除！`,
+    '解散',
+    () => api('DELETE', `/api/groups/${id}`)
+      .then(r => { if (r.ok) { toast(`已解散「${name}」`); loadGroups(); } else toast(r.error||'操作失败','error'); })
+      .catch(() => toast('操作失败','error'))
+  );
+}
+
+// ─── Messages ──────────────────────────────────────────────────
+let msgPage = 1, msgTotal = 0, msgSize = 20, msgDebounce = null;
+
+function debounceLoadMsgs() {
+  clearTimeout(msgDebounce);
+  msgDebounce = setTimeout(() => loadMsgs(1), 400);
+}
+
+function loadMsgs(page) {
+  msgPage = page;
+  const search = document.getElementById('msg-search') ? document.getElementById('msg-search').value.trim() : '';
+  const tbody = document.getElementById('msgs-tbody');
+  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:28px;color:#aaa">加载中...</td></tr>';
+  api('GET', `/api/messages?search=${encodeURIComponent(search)}&page=${page}&size=${msgSize}`)
+    .then(r => { msgTotal = r.total||0; renderMsgs(r.rows||[]); renderMsgPagination(); })
+    .catch(() => toast('获取消息失败','error'));
+}
+
+function renderMsgs(rows) {
+  const tbody = document.getElementById('msgs-tbody');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:28px;color:#aaa">暂无消息</td></tr>'; return; }
+  const typeMap = { text:'文本', image:'图片', voice:'语音', file:'文件' };
+  tbody.innerHTML = rows.map(m => `
+    <tr>
+      <td><span style="color:#aaa;font-size:11.5px">#${m.id}</span></td>
+      <td><strong>${esc(m.sender||'-')}</strong></td>
+      <td style="max-width:180px">${m.recalled ? '<span style="color:#aaa;font-style:italic">消息已撤回</span>' : `<span title="${esc(m.content)}">${esc(truncate(m.content,55))}</span>`}</td>
+      <td><span class="tag tag-gray">${typeMap[m.msg_type]||m.msg_type}</span></td>
+      <td><span class="tag ${m.chat_type==='群聊'?'tag-blue':'tag-green'}">${esc(m.chat_type)}</span></td>
+      <td>${esc(m.target||'-')}</td>
+      <td style="font-size:11.5px;color:#aaa;white-space:nowrap">${fmtDate(m.created_at)}</td>
+      <td>${m.recalled ? '<span class="tag tag-red">已撤回</span>' : '<span class="tag tag-green">正常</span>'}</td>
+      <td>${m.recalled ? '<button class="btn btn-sm btn-gray" disabled>已撤回</button>' : `<button class="btn btn-sm btn-warn" onclick="recallMsg(${m.id})">撤回</button>`}</td>
+    </tr>`).join('');
+}
+
+function renderMsgPagination() {
+  const total = msgTotal, size = msgSize, page = msgPage;
+  const pages = Math.ceil(total / size) || 1;
+  const pag = document.getElementById('msg-pagination');
+  let html = `<span class="pg-info">共 ${total} 条，第 ${page}/${pages} 页</span>`;
+  html += `<button class="pg-btn" ${page<=1?'disabled':''} onclick="loadMsgs(1)">«</button>`;
+  html += `<button class="pg-btn" ${page<=1?'disabled':''} onclick="loadMsgs(${page-1})">‹</button>`;
+  const start = Math.max(1, page-2), end = Math.min(pages, page+2);
+  for (let i=start;i<=end;i++) html += `<button class="pg-btn ${i===page?'active':''}" onclick="loadMsgs(${i})">${i}</button>`;
+  html += `<button class="pg-btn" ${page>=pages?'disabled':''} onclick="loadMsgs(${page+1})">›</button>`;
+  html += `<button class="pg-btn" ${page>=pages?'disabled':''} onclick="loadMsgs(${pages})">»</button>`;
+  pag.innerHTML = html;
+}
+
+function recallMsg(id) {
+  confirm(
+    '撤回消息',
+    '确定要撤回该消息吗？撤回后内容将替换为"[该消息已被管理员撤回]"。',
+    '撤回',
+    () => api('PUT', `/api/messages/${id}/recall`)
+      .then(r => { if (r.ok) { toast('消息已撤回'); loadMsgs(msgPage); } else toast(r.error||'操作失败','error'); })
+      .catch(() => toast('操作失败','error'))
+  );
+}
+
+// ─── Invite Codes ───────────────────────────────────────────────
+let allCodes = [];
+
+function loadCodes() {
+  const grid = document.getElementById('codes-grid');
+  grid.innerHTML = '<div class="empty"><p>加载中...</p></div>';
+  api('GET', '/api/invite-codes').then(rows => {
+    allCodes = rows;
+    renderCodes(rows);
+  }).catch(() => toast('获取邀请码失败','error'));
+}
+
+function renderCodes(rows) {
+  const grid = document.getElementById('codes-grid');
+  if (!rows.length) { grid.innerHTML = '<div class="empty"><p>暂无邀请码，点击右上角生成</p></div>'; return; }
+  grid.innerHTML = rows.map(c => {
+    const cls = c.status === 'used' ? 'used' : c.status === 'expired' ? 'expired' : '';
+    const statusTag = c.status === 'used' ? 'tag-orange' : c.status === 'expired' ? 'tag-gray' : 'tag-green';
+    return `<div class="code-card ${cls}">
+      <div class="code-value">${esc(c.code)}</div>
+      <div class="code-meta">
+        <div>状态：<span class="tag ${statusTag}">${esc(c.statusLabel)}</span></div>
+        <div>有效期至：${fmtDate(c.expires_at)}</div>
+        ${c.used_at ? `<div>使用者：${esc(c.used_by||'-')}</div>` : ''}
+        <div>创建者：${esc(c.created_by)}</div>
+      </div>
+      <div class="code-actions">
+        <button class="btn btn-sm btn-danger" onclick="deleteCode(&quot;${esc(c.id)}&quot;,&quot;${esc(c.code)}&quot;)">删除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterCodes() {
+  const q = document.getElementById('code-search').value.trim().toLowerCase();
+  renderCodes(q ? allCodes.filter(c => c.code.toLowerCase().includes(q)) : allCodes);
+}
+
+function deleteCode(id, code) {
+  confirm(
+    '删除邀请码',
+    `确定要删除邀请码「${code}」吗？`,
+    '删除',
+    () => api('DELETE', `/api/invite-codes/${id}`)
+      .then(r => { if (r.ok) { toast('已删除'); loadCodes(); } else toast(r.error||'删除失败','error'); })
+      .catch(() => toast('删除失败','error'))
+  );
+}
+
+function genCodes() {
+  const days = parseInt(document.getElementById('gen-days').value) || 7;
+  const count = parseInt(document.getElementById('gen-count').value) || 1;
+  const btn = document.getElementById('btn-gen-submit');
+  btn.disabled = true; btn.textContent = '生成中...';
+  api('POST', '/api/invite-codes', { days, count })
+    .then(r => {
+      if (r.ok && r.codes) {
+        document.getElementById('gen-result').style.display = 'block';
+        document.getElementById('gen-codes-list').innerHTML = r.codes.map(c =>
+          `<div style="margin-bottom:4px">${esc(c.code)} <span style="font-size:11px;color:#888;font-weight:normal">（${days}天有效期）</span></div>`
+        ).join('');
+        btn.style.display = 'none';
+        loadCodes();
+      } else {
+        toast(r.error||'生成失败','error');
+      }
+    })
+    .catch(() => toast('生成失败','error'))
+    .finally(() => { btn.disabled = false; btn.textContent = '生成'; });
+}
+
+// ─── Init ──────────────────────────────────────────────────────
+if (token) {
+  api('GET', '/api/stats')
+    .then(r => showApp())
+    .catch(() => { token=''; localStorage.removeItem(TOKEN_KEY); showLogin(); });
+} else {
+  showLogin();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+node_modules/
+client/node_modules/
+server/node_modules/
+webhook/node_modules/
+
+client/dist/
+
+server/wecom.db
+server/wecom.db-shm
+server/wecom.db-wal
+server/uploads/
+
+.env
+*.log
+.DS_Store
