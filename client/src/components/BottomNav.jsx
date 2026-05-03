@@ -37,6 +37,19 @@ export default function BottomNav() {
         <span className="bnav-label">通讯录</span>
       </button>
 
+      {/* 群组 */}
+      <button
+        className={`bnav-btn ${activeTab === 'groups' ? 'active' : ''}`}
+        onClick={() => setActiveTab('groups')}
+      >
+        <span className="bnav-icon-wrap">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
+            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/>
+          </svg>
+        </span>
+        <span className="bnav-label">群组</span>
+      </button>
+
       {/* 我 */}
       <button
         className={`bnav-btn ${activeTab === 'profile' ? 'active' : ''}`}

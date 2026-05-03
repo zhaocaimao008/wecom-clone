@@ -5,6 +5,7 @@ import Sidebar from '../components/Sidebar';
 import BottomNav from '../components/BottomNav';
 import ChatPanel from '../components/ChatPanel';
 import ContactPanel from '../components/ContactPanel';
+import GroupsPanel from '../components/GroupsPanel';
 import Profile from '../components/Profile';
 import CallScreen from '../components/CallScreen';
 
@@ -52,6 +53,7 @@ export default function Main() {
       <div className="main-content">
         {activeTab === 'messages'    && <ChatPanel />}
         {activeTab === 'contacts'    && <ContactPanel />}
+        {activeTab === 'groups'      && <GroupsPanel />}
         {activeTab === 'profile'     && <Profile />}
       </div>
       {!inChat && <BottomNav />}

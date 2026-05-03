@@ -16,15 +16,13 @@ function useLongPress(onLongPress) {
 }
 
 export default function ContactPanel() {
-  const { contacts, departments, groups, fetchMessages, setActiveTab, fetchContacts, fetchConversations, api } = useStore();
+  const { contacts, fetchMessages, setActiveTab, fetchContacts, fetchConversations, api } = useStore();
   const { friendRequests, friendRequestCount } = useStore();
   const [selected, setSelected] = useState(null);
-  const [expanded, setExpanded] = useState({});
-  const [view, setView] = useState('members');
   const [showAddModal, setShowAddModal] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
   const [showRequests, setShowRequests] = useState(false);
-  const [ctxMenu, setCtxMenu] = useState(null); // { type:'user'|'group', data, x, y }
+  const [ctxMenu, setCtxMenu] = useState(null); // { type:'user', data, x, y }
 
   // Close context menu on outside click
   useEffect(() => {
@@ -37,38 +35,29 @@ export default function ContactPanel() {
 
   async function handleCtxAction(action) {
     if (!ctxMenu) return;
-    const { type, data } = ctxMenu;
+    const { data } = ctxMenu;
     setCtxMenu(null);
-    const convKey = type === 'user' ? `p:${data.id}` : `g:${data.id}`;
+    const convKey = `p:${data.id}`;
     try {
       if (action === 'pin' || action === 'mute') {
         const conversations = useStore.getState().conversations;
-        const conv = conversations.find(c => type === 'user' ? c.peer_id === data.id : c.group_id === data.id);
+        const conv = conversations.find(c => c.peer_id === data.id);
         const cur = conv?.[action === 'pin' ? 'is_pinned' : 'is_muted'] ?? 0;
         await useStore.getState().api('/messages/conversations/settings', {
           method: 'POST', body: { convKey, [action === 'pin' ? 'isPinned' : 'isMuted']: cur ? 0 : 1 },
         });
         fetchConversations();
       } else if (action === 'delete') {
-        if (type === 'user') {
-          await useStore.getState().api(`/users/friends/${data.id}`, { method: 'DELETE' });
-          fetchContacts();
-        } else {
-          await useStore.getState().api(`/groups/${data.id}/quit`, { method: 'POST' });
-          fetchContacts();
-        }
+        await useStore.getState().api(`/users/friends/${data.id}`, { method: 'DELETE' });
+        fetchContacts();
         fetchConversations();
+        if (selected?.data?.id === data.id) setSelected(null);
       }
     } catch(e) { alert(e.message); }
   }
 
-  function toggle(dept) { setExpanded(e => ({ ...e, [dept]: !e[dept] })); }
-
   function openChat(type, data) {
-    const conv = type === 'user'
-      ? { type: 'private', id: data.id, name: data.display_name, avatarColor: data.avatar_color }
-      : { type: 'group', id: data.id, name: data.name, avatarColor: data.avatar_color };
-    fetchMessages(conv);
+    fetchMessages({ type: 'private', id: data.id, name: data.display_name, avatarColor: data.avatar_color });
     setActiveTab('messages');
   }
 
@@ -106,11 +95,6 @@ export default function ContactPanel() {
           </div>
         </div>
 
-        <div className="contact-tabs">
-          <button className={view === 'members' ? 'active' : ''} onClick={() => setView('members')}>联系人</button>
-          <button className={view === 'groups' ? 'active' : ''} onClick={() => setView('groups')}>群聊</button>
-        </div>
-
         {/* 好友申请入口 */}
         <div className={`friend-req-entry ${showRequests ? 'active' : ''}`}
           onClick={() => { setShowRequests(v => !v); setSelected(null); }}>
@@ -127,7 +111,7 @@ export default function ContactPanel() {
 
         <div className="contact-items">
           {/* ── Search results ── */}
-          {localSearch.trim() && view === 'members' && (
+          {localSearch.trim() && (
             filteredContacts.length === 0
               ? <div className="empty-list">未找到"{localSearch}"</div>
               : filteredContacts.map(u => (
@@ -140,7 +124,7 @@ export default function ContactPanel() {
           )}
 
           {/* ── Contacts list ── */}
-          {!localSearch.trim() && view === 'members' && (
+          {!localSearch.trim() && (
             contacts.length === 0
               ? <div className="empty-list" style={{ padding: '32px 16px', color: '#999', textAlign: 'center', fontSize: 13 }}>
                   暂无好友，点击右上角添加
@@ -153,15 +137,6 @@ export default function ContactPanel() {
                 />
               ))
           )}
-
-          {/* ── Groups ── */}
-          {view === 'groups' && groups.map(g => (
-            <GroupItem key={g.id} g={g}
-              active={selected?.type === 'group' && selected?.data?.id === g.id}
-              onClick={() => { setSelected({ type: 'group', data: g }); setShowRequests(false); }}
-              onLongPress={() => setCtxMenu({ type: 'group', data: g })}
-            />
-          ))}
         </div>
       </div>
 
@@ -185,9 +160,7 @@ export default function ContactPanel() {
           onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
           <button onClick={() => handleCtxAction('pin')}>置顶</button>
           <button onClick={() => handleCtxAction('mute')}>静音</button>
-          <button className="ctx-delete" onClick={() => handleCtxAction('delete')}>
-            {ctxMenu.type === 'group' ? '退出群聊' : '删除好友'}
-          </button>
+          <button className="ctx-delete" onClick={() => handleCtxAction('delete')}>删除好友</button>
         </div>
       )}
 
@@ -599,14 +572,3 @@ function ContactItem({ u, active, onClick, onLongPress }) {
   );
 }
 
-function GroupItem({ g, active, onClick, onLongPress }) {
-  const lp = useLongPress(onLongPress);
-  return (
-    <div className={`contact-item ${active ? 'active' : ''}`} onClick={onClick} {...lp}>
-      <AvatarCircle name={g.name} color={g.avatar_color} size={38} radius={10} />
-      <div className="contact-info">
-        <span className="contact-name">{g.name}</span>
-      </div>
-    </div>
-  );
-}
