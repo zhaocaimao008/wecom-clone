@@ -80,8 +80,9 @@ export default function ContactPanel() {
     : null;
 
   return (
-    <div className="contact-panel contact-panel-full">
-      <div className="contact-list" style={{ width: '100%', borderRight: 'none' }}>
+    <div className="contact-panel">
+      {/* ── Left: list ── */}
+      <div className="contact-list">
         <div className="panel-header">
           <div className="panel-header-row">
             <div className="search-bar" style={{ flex: 1 }}>
@@ -164,6 +165,20 @@ export default function ContactPanel() {
         </div>
       </div>
 
+      {/* ── Right: detail / friend requests / empty state ── */}
+      <div className="contact-detail-panel">
+        {showRequests
+          ? <FriendRequestList onClose={() => setShowRequests(false)} />
+          : selected
+            ? <ContactDetail
+                item={selected}
+                onClose={() => setSelected(null)}
+                onChat={(type, data) => { openChat(type, data); setSelected(null); }}
+              />
+            : <EmptyDetail />
+        }
+      </div>
+
       {/* Long-press context menu */}
       {ctxMenu && (
         <div className="conv-ctx-menu" style={{ top: ctxMenu.y || '50%', left: ctxMenu.x || '50%' }}
@@ -183,31 +198,6 @@ export default function ContactPanel() {
           onSelect={u => { setSelected({ type: 'user', data: u }); setShowAddModal(false); }}
         />
       )}
-
-      {/* Friend requests modal */}
-      {showRequests && (
-        <div className="modal-overlay" onClick={() => setShowRequests(false)}>
-          <div className="modal-box" style={{ width: 420, maxHeight: '70vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
-            onClick={e => e.stopPropagation()}>
-            <FriendRequestList onClose={() => setShowRequests(false)} />
-          </div>
-        </div>
-      )}
-
-      {/* Contact / Group detail modal */}
-      {selected && (
-        <div className="modal-overlay" onClick={() => setSelected(null)}>
-          <div className="modal-box" style={{ width: 380 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span>{selected.type === 'group' ? '群组详情' : '联系人详情'}</span>
-              <button className="modal-close" onClick={() => setSelected(null)}>✕</button>
-            </div>
-            <div className="modal-body" style={{ padding: '8px 24px 24px' }}>
-              <ContactDetail item={selected} onChat={(type, data) => { openChat(type, data); setSelected(null); }} />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -216,6 +206,8 @@ export default function ContactPanel() {
 function FriendRequestList({ onClose }) {
   const { friendRequests, api, fetchContacts, fetchFriendRequests, removeFriendRequest } = useStore();
   const [msgs, setMsgs] = useState({});
+
+  useEffect(() => { fetchFriendRequests(); }, []);
 
   async function handle(fromId, action) {
     try {
@@ -497,7 +489,7 @@ function AddByScan({ api, onSelect, onClose }) {
 }
 
 /* ── Contact Detail ───────────────────────────────────── */
-function ContactDetail({ item, onChat }) {
+function ContactDetail({ item, onChat, onClose }) {
   const { type, data } = item;
   const isGroup = type === 'group';
   const { contacts, api, fetchContacts, currentUser } = useStore();
@@ -518,6 +510,11 @@ function ContactDetail({ item, onChat }) {
 
   return (
     <div className="detail-card">
+      {onClose && (
+        <button className="detail-close-btn" onClick={onClose} title="关闭">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      )}
       <div className="detail-avatar">
         <AvatarCircle name={isGroup ? data.name : data.display_name} color={data.avatar_color} size={72} radius={isGroup ? 16 : 36} />
       </div>

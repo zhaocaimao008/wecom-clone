@@ -913,6 +913,29 @@ input::placeholder, textarea::placeholder { color: var(--text-hint); }
   height: 100%;
 }
 
+.contact-detail-panel {
+  flex: 1;
+  overflow-y: auto;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: background 0.12s;
+}
+.detail-close-btn:hover { background: var(--hover-bg); }
+
 .contact-list {
   width: 290px;
   flex-shrink: 0;
@@ -1003,6 +1026,7 @@ input::placeholder, textarea::placeholder { color: var(--text-hint); }
   max-width: 460px;
   margin: 0 auto;
   padding: 40px 32px;
+  position: relative;
 }
 
 .detail-avatar { margin-bottom: 16px; }
@@ -2382,6 +2406,10 @@ input::placeholder, textarea::placeholder { color: var(--text-hint); }
   /* ── Chat panel: list OR chat, never both ── */
   .chat-panel .conv-list { width: 100%; border-right: none; }
   .chat-panel .chat-area { display: none; }
+
+  /* ── Contact panel: hide right panel, list takes full width ── */
+  .contact-list { width: 100%; border-right: none; }
+  .contact-detail-panel { display: none; }
 
   /* In chat: full height column, no bottom padding (BottomNav unmounted by React) */
   .chat-panel.chat-active {
