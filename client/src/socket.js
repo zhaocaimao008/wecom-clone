@@ -17,23 +17,43 @@ export function connectSocket(token) {
       : { ...msg, type: msg.type || msg.msg_type || 'text' };
     useStore.getState().addMessage(normalized);
 
-    // Desktop notification for messages not in the currently focused conversation
-    const { activeConv, currentUser } = useStore.getState();
-    if (!msg.group_id && msg.sender_id === currentUser?.id) return; // own message
+    const { activeConv, currentUser, groups } = useStore.getState();
+    if (msg.sender_id === currentUser?.id) return; // own message
     const isActive = activeConv && (
       (activeConv.type === 'private' && !msg.group_id && activeConv.id === msg.sender_id) ||
       (activeConv.type === 'group'   && msg.group_id  && activeConv.id === msg.group_id)
     );
-    if (!isActive && window.electronAPI) {
-      const body = msg.msg_type === 'voice' ? '[语音消息]'
-        : msg.msg_type === 'image' ? '[图片]'
-        : (msg.content || '').slice(0, 100);
-      window.electronAPI.showNotification({
-        title: msg.sender_name || '新消息',
-        body,
-        convId:   msg.group_id ?? msg.sender_id,
-        convType: msg.group_id ? 'group' : 'private',
-      });
+    if (isActive) return;
+
+    const bodyText = msg.msg_type === 'voice' ? '[语音消息]'
+      : msg.msg_type === 'image' ? '[图片]'
+      : msg.msg_type === 'file'  ? '[文件]'
+      : (msg.content || '').slice(0, 80);
+
+    const convId   = msg.group_id ?? msg.sender_id;
+    const convType = msg.group_id ? 'group' : 'private';
+    let title = msg.sender_name || '新消息';
+    if (msg.group_id) {
+      const grp = groups.find(g => g.id === msg.group_id);
+      if (grp) title = `${grp.name}：${msg.sender_name}`;
+    }
+
+    // In-app floating toast (always, regardless of Electron/browser)
+    useStore.getState().addToast({
+      title,
+      body: bodyText,
+      senderName:  msg.sender_name,
+      senderColor: msg.sender_color,
+      convId,
+      convType,
+    });
+
+    // Electron OS notification
+    if (window.electronAPI) {
+      window.electronAPI.showNotification({ title, body: bodyText, convId, convType });
+    // Browser Notification API (non-Electron)
+    } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      new Notification(title, { body: bodyText, icon: '/favicon.ico', silent: false });
     }
   });
   socket.on('message_recalled',  ({ messageId }) => useStore.getState().recallMessage(messageId));

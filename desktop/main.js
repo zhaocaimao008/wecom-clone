@@ -42,23 +42,23 @@ app.on('second-instance', () => {
 });
 
 // ── Create tray icon (1x1 pixel encoded as base64 fallback) ──────────────────
-function createTrayIcon() {
-  // Simple green circle icon as base64 PNG
-  const iconBase64 =
-    'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAsTAAALEwEAmpwYAAAB' +
-    'GklEQVR4nO2XMQ6CMBRAX6MH8CgeQEJiYmLiQkzckJW4wQFc2I2Jgxs3cHQnHsDEmIiJiQuzEBIS' +
-    'k/dJIS1tKUVw6Uua9P//X0rbAoQQQgghhBDiL3LOjc65lfeeKaV2nHPrvu97SikFADjnlgDQ930/' +
-    'AM45kFIqpJQ2SimttQYASCkVY4wxxhhjjDHGGGOMMcYYY4wxxhhjjDHGGPuNMTYAYIwxxhhjjDHG' +
-    'GGOMMcYYY4wxxhhjjDHGGGOMMcYYY4wxxhhjjDHGGGOMMcYYY4wxxhhjjDHGGGOMMcYYY4wx/3AC' +
-    'AAD//2Q3BQAAAABJRU5ErkJggg==';
-
-  try {
-    const img = nativeImage.createFromDataURL(`data:image/png;base64,${iconBase64}`);
-    return img.resize({ width: 16, height: 16 });
-  } catch {
-    return nativeImage.createEmpty();
+// Generate icon from raw BGRA pixels — no external file needed
+function makeIcon(size) {
+  const buf = Buffer.alloc(size * size * 4, 0);
+  const cx = (size - 1) / 2, cy = (size - 1) / 2, r = size / 2 - 1;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - cx, dy = y - cy;
+      if (dx * dx + dy * dy <= r * r) {
+        const i = (y * size + x) * 4;
+        buf[i] = 96; buf[i+1] = 193; buf[i+2] = 7; buf[i+3] = 255; // #07c160 BGRA
+      }
+    }
   }
+  return nativeImage.createFromBuffer(buf, { width: size, height: size });
 }
+function createTrayIcon() { return makeIcon(16); }
+function createAppIcon()  { return makeIcon(32); }
 
 // ── Create window ─────────────────────────────────────────────────────────────
 function createWindow() {
@@ -69,6 +69,7 @@ function createWindow() {
     minWidth:  900,
     minHeight: 600,
     title:    '企业密信',
+    icon:     createAppIcon(),
     backgroundColor: '#f0f0f0',
     webPreferences: {
       preload:          path.join(__dirname, 'preload.js'),
@@ -438,6 +439,10 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler((wc, permission) => {
     return ALLOWED_PERMS.includes(permission);
   });
+
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(createAppIcon());
+  }
 
   buildAppMenu();
   createWindow();

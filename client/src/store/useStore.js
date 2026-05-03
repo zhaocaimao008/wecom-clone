@@ -62,6 +62,7 @@ export const useStore = create((set, get) => ({
   typingUsers: new Set(),
   sendError: null,
   messagesError: null,
+  toasts: [],
   friendRequests: [],
   friendRequestCount: 0,
   activeCall: null,
@@ -296,6 +297,16 @@ export const useStore = create((set, get) => ({
   setSendError(msg) {
     set({ sendError: msg });
     setTimeout(() => set({ sendError: null }), 3500);
+  },
+
+  // ── In-app toasts ──────────────────────────────────────────────────────────────
+  addToast(toast) {
+    const id = Date.now() + Math.random();
+    set(s => ({ toasts: [...s.toasts.slice(-4), { id, ...toast }] }));
+    setTimeout(() => get().removeToast(id), 4500);
+  },
+  removeToast(id) {
+    set(s => ({ toasts: s.toasts.filter(t => t.id !== id) }));
   },
 
   // ── Online ────────────────────────────────────────────────────────────────────

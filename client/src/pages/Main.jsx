@@ -8,6 +8,7 @@ import ContactPanel from '../components/ContactPanel';
 import GroupsPanel from '../components/GroupsPanel';
 import Profile from '../components/Profile';
 import CallScreen from '../components/CallScreen';
+import NotificationToast from '../components/NotificationToast';
 
 export default function Main() {
   const { token, activeTab, activeConv, fetchConversations, fetchContacts, fetchFriendRequests } = useStore();
@@ -18,6 +19,10 @@ export default function Main() {
     fetchConversations();
     fetchContacts();
     fetchFriendRequests();
+    // Request browser notification permission on first load (non-Electron)
+    if (!window.electronAPI && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
     return () => disconnectSocket();
   }, [token]);
 
@@ -58,6 +63,7 @@ export default function Main() {
       </div>
       {!inChat && <BottomNav />}
       <CallScreen />
+      <NotificationToast />
     </div>
   );
 }
