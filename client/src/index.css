@@ -2775,27 +2775,171 @@ input::placeholder, textarea::placeholder { color: var(--text-hint); }
 
 /* ── Dark mode ── */
 html.dark {
-  --bg: #1a1a1a;
-  --sidebar-bg: #111;
-  --border: #2e2e2e;
-  --hover-bg: rgba(255,255,255,0.06);
-  --text-primary: #e0e0e0;
-  --text-secondary: #888;
-  --shadow: 0 1px 4px rgba(0,0,0,0.4);
+  --bg:            #1a1a1a;
+  --bg2:           #1e1e1e;
+  --bg3:           #242424;
+  --bg4:           #2a2a2a;
+  --sidebar-bg:    #111;
+  --panel-bg:      #1e1e1e;
+  --panel-header-bg: #1a1a1a;
+  --chat-bg:       #111;
+  --border:        #2e2e2e;
+  --hover-bg:      rgba(255,255,255,0.06);
+  --active-bg:     rgba(255,255,255,0.10);
+  --text-primary:  #e0e0e0;
+  --text-secondary:#8a8a8a;
+  --text-hint:     #555;
+  --bubble-mine:   #0a5c35;
+  --bubble-theirs: #2a2a2a;
+  --shadow:        0 1px 4px rgba(0,0,0,0.4);
 }
+
+/* ── Base ── */
 html.dark body { background: var(--bg); color: var(--text-primary); }
-html.dark .chat-header,
-html.dark .profile-card,
-html.dark .profile-body,
-html.dark .profile-settings,
-html.dark .modal-box,
-html.dark .bottom-nav { background: #1e1e1e; border-color: var(--border); }
-html.dark .wx-input-wrap,
-html.dark .wx-more-panel { background: #1e1e1e; border-color: var(--border); }
-html.dark .wx-textarea { background: #2a2a2a; color: #e0e0e0; }
-html.dark .msg-bubble { background: #2a2a2a; color: #e0e0e0; }
-html.dark .msg-bubble.mine-bubble { background: #0a5c35; }
-html.dark .privacy-sub { background: #252525; }
+
+/* ── Main layout ── */
+html.dark .main-layout { background: var(--sidebar-bg); }
+html.dark .main-content { background: var(--bg2); }
+
+/* ── Sidebar ── */
+html.dark .sidebar { background: var(--sidebar-bg); }
+
+/* ── Bottom nav ── */
+html.dark .bottom-nav { background: var(--bg2); border-color: var(--border); }
+html.dark .bottom-nav .nav-btn { color: #666; }
+html.dark .bottom-nav .nav-btn.active { color: var(--green); }
+
+/* ── Panel headers ── */
+html.dark .panel-header { background: var(--panel-header-bg); border-color: var(--border); }
+html.dark .search-bar { background: #2a2a2a; }
+html.dark .search-bar input { color: var(--text-primary); }
+
+/* ── Conversation list ── */
+html.dark .conv-list { background: var(--bg2); border-color: var(--border); }
+html.dark .conv-item { border-color: var(--border); }
+html.dark .conv-item:hover { background: var(--hover-bg); }
+html.dark .conv-item.active { background: var(--active-bg); }
+html.dark .conv-name { color: var(--text-primary); }
+html.dark .conv-time,
+html.dark .conv-preview { color: var(--text-secondary); }
+
+/* ── Contact panel ── */
+html.dark .contact-list { background: var(--bg2); border-color: var(--border); }
+html.dark .contact-detail-panel { background: var(--bg2); }
+html.dark .contact-tabs { background: var(--panel-header-bg); border-color: var(--border); }
+html.dark .contact-tabs button { color: var(--text-secondary); }
+html.dark .contact-tabs button.active { color: var(--green); border-bottom-color: var(--green); }
+html.dark .contact-item { color: var(--text-primary); }
+html.dark .contact-item:hover { background: var(--hover-bg); }
+html.dark .contact-item.active { background: var(--active-bg); }
+html.dark .contact-name { color: var(--text-primary); }
+html.dark .dept-header { background: var(--bg3); border-color: var(--border); color: var(--text-secondary); }
+html.dark .friend-req-entry { border-color: var(--border); }
+html.dark .friend-req-entry:hover { background: var(--hover-bg); }
+html.dark .friend-req-entry.active { background: var(--active-bg); }
+html.dark .freq-label { color: var(--text-primary); }
+
+/* ── Chat window ── */
+html.dark .chat-area { background: var(--chat-bg); }
+html.dark .chat-window { background: var(--chat-bg); }
+html.dark .chat-header { background: var(--bg2); border-color: var(--border); color: var(--text-primary); }
+html.dark .chat-header .chat-title { color: var(--text-primary); }
+html.dark .messages-area { background: var(--chat-bg); }
+html.dark .msg-name { color: var(--text-secondary); }
+html.dark .msg-bubble { background: var(--bubble-theirs); color: var(--text-primary); }
+html.dark .msg-bubble.mine-bubble { background: var(--bubble-mine); color: #e0e0e0; }
+html.dark .msg-time { color: var(--text-hint); }
+html.dark .recalled-tip { color: var(--text-secondary); }
+
+/* ── Input area ── */
+html.dark .wx-input-wrap { background: var(--bg2); border-color: var(--border); }
+html.dark .wx-textarea { background: var(--bg4); color: var(--text-primary); }
+html.dark .wx-more-panel { background: var(--bg2); border-color: var(--border); }
+html.dark .wx-toolbar-btn { color: var(--text-secondary); }
+html.dark .wx-toolbar-btn:hover { background: var(--hover-bg); }
+html.dark .wx-more-item { color: var(--text-primary); }
+html.dark .wx-more-item-icon { background: var(--bg4); }
+
+/* ── Profile page ── */
+html.dark .profile-page { background: var(--bg); }
+html.dark .profile-card { background: var(--bg2); }
+html.dark .profile-header { background: var(--bg2); border-color: var(--border); }
+html.dark .profile-header h2 { color: var(--text-primary); }
+html.dark .profile-id-label { color: var(--text-secondary); }
+html.dark .profile-id-value { color: var(--text-primary); }
+html.dark .profile-body { background: var(--bg2); }
+html.dark .info-row { border-color: var(--border); }
+html.dark .info-label { color: var(--text-secondary); }
+html.dark .info-value { color: var(--text-primary); }
+html.dark .profile-field label { color: var(--text-secondary); }
+html.dark .profile-field input { background: var(--bg4); color: var(--text-primary); border-color: var(--border); }
+html.dark .profile-settings { background: var(--bg2); border-color: var(--border); }
+html.dark .profile-settings h3 { color: var(--text-secondary); }
+html.dark .settings-row { border-color: var(--border); }
+html.dark .settings-row:hover { background: var(--hover-bg); }
+html.dark .settings-label { color: var(--text-primary); }
+html.dark .settings-value { color: var(--text-secondary); }
+html.dark .privacy-sub { background: var(--bg3); }
+
+/* ── Modal ── */
+html.dark .modal-overlay { background: rgba(0,0,0,0.7); }
+html.dark .modal-box { background: var(--bg2); border-color: var(--border); }
+html.dark .modal-header { background: var(--bg2); border-color: var(--border); color: var(--text-primary); }
+html.dark .modal-input { background: var(--bg4); color: var(--text-primary); border-color: var(--border); }
+html.dark .modal-close { color: var(--text-secondary); }
+html.dark .modal-back-btn { color: var(--text-secondary); }
+
+/* ── Detail card ── */
+html.dark .detail-card { background: var(--bg2); }
+html.dark .detail-name { color: var(--text-primary); }
+html.dark .detail-position { color: var(--text-secondary); }
+html.dark .detail-row { border-color: var(--border); }
+html.dark .detail-label { color: var(--text-secondary); }
+html.dark .detail-value { color: var(--text-primary); }
+
+/* ── Empty / misc ── */
+html.dark .empty-state p { color: var(--text-secondary); }
+html.dark .empty-list { color: var(--text-secondary); }
+html.dark .load-more-tip { color: #555; }
+html.dark .freq-panel-header { background: var(--bg2); border-color: var(--border); color: var(--text-primary); }
+html.dark .freq-item { border-color: var(--border); }
+html.dark .freq-name { color: var(--text-primary); }
+html.dark .freq-msg { color: var(--text-secondary); }
+html.dark .group-manage-panel { background: var(--bg2); }
+html.dark .gm-header { background: var(--bg2); border-color: var(--border); color: var(--text-primary); }
+html.dark .gm-section-title { color: var(--text-secondary); }
+html.dark .gm-member-name { color: var(--text-primary); }
+html.dark .login-box { background: var(--bg2); }
+html.dark .login-logo-text { color: var(--text-primary); }
+html.dark .login-tabs { border-color: var(--border); }
+html.dark .login-tabs button { color: var(--text-secondary); }
+html.dark .login-input { background: var(--bg4) !important; color: var(--text-primary) !important; border-color: var(--border) !important; }
+html.dark .invite-code-input { background: var(--bg4); color: var(--text-primary); border-color: var(--border); }
+html.dark .context-menu,
+html.dark .conv-ctx-menu { background: var(--bg2); border-color: var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
+html.dark .context-menu button,
+html.dark .conv-ctx-menu button { color: var(--text-primary); }
+html.dark .context-menu button:hover,
+html.dark .conv-ctx-menu button:hover { background: var(--hover-bg); }
+html.dark .profile-account-item { border-color: var(--border); }
+html.dark .profile-account-item.active { background: var(--active-bg); }
+html.dark .profile-account-name { color: var(--text-primary); }
+html.dark .profile-account-sub { color: var(--text-secondary); }
+html.dark .add-account-modal { background: var(--bg2); }
+html.dark .avatar-upload-btn { background: var(--bg4); color: var(--text-primary); }
+html.dark .avatar-upload-btn:hover:not(:disabled) { background: #333; }
+html.dark .avatar-color-label { color: var(--text-secondary); }
+html.dark .announcement-box { background: var(--bg4); border-color: var(--border); }
+html.dark .ann-text { color: var(--text-primary); }
+html.dark .workstation-inner { background: var(--bg2); }
+html.dark .app-item { background: var(--bg3); }
+html.dark .app-item:hover { background: var(--bg4); }
+html.dark .app-name { color: var(--text-primary); }
+html.dark .notice-item { background: var(--bg3); border-color: var(--border); }
+html.dark .notice-title { color: var(--text-primary); }
+html.dark .notice-time { color: var(--text-secondary); }
+html.dark .call-box { background: var(--bg2); }
+html.dark .call-name { color: var(--text-primary); }
 
 /* ── Avatar edit ── */
 .avatar-edit-wrap {

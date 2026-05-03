@@ -216,8 +216,6 @@ export default function Profile() {
             <div className="profile-form">
               {[
                 { key: 'display_name', label: '姓名' },
-                { key: 'department',   label: '部门' },
-                { key: 'position',     label: '职位' },
                 { key: 'phone',        label: '手机' },
                 { key: 'email',        label: '邮箱' },
               ].map(f => (
@@ -236,8 +234,6 @@ export default function Profile() {
               {[
                 { label: '账号', value: currentUser.username },
                 { label: '姓名', value: currentUser.display_name },
-                { label: '部门', value: currentUser.department || '未设置' },
-                { label: '职位', value: currentUser.position  || '未设置' },
                 { label: '手机', value: currentUser.phone     || '未设置' },
                 { label: '邮箱', value: currentUser.email     || '未设置' },
               ].map(f => (
