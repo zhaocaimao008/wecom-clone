@@ -16,8 +16,25 @@ export interface TextMessage extends BaseMessage {
 
 export interface VoiceMessage extends BaseMessage {
   type: 'voice';
-  voiceUrl: string;    // 音频 URL 或 base64
-  durationMs: number;  // 时长，毫秒
+  voiceUrl: string;
+  durationMs: number;
 }
 
-export type Message = TextMessage | VoiceMessage;
+export interface FileMessage extends BaseMessage {
+  type: 'file';
+  fileUrl: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+}
+
+export interface CardMessage extends BaseMessage {
+  type: 'card';
+  userId: number;
+  name: string;
+  department: string;
+  position: string;
+  color: string;
+}
+
+export type Message = TextMessage | VoiceMessage | FileMessage | CardMessage;

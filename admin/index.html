@@ -321,6 +321,10 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle}
         <svg viewBox="0 0 24 24"><path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
         <span>邀请码管理</span>
       </div>
+      <div class="nav-item" data-nav="audit" onclick="nav('audit',this)">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 15h8v2H8zm0-4h8v2H8zm0-4h5v2H8z"/></svg>
+        <span>审计日志</span>
+      </div>
     </nav>
 
     <div class="sidebar-bottom">
@@ -458,6 +462,18 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle}
                 <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
                 <input type="text" id="msg-search" placeholder="搜索消息内容..." oninput="debounceLoadMsgs()">
               </div>
+              <select id="msg-type-filter" class="btn btn-gray btn-sm" style="padding:5px 9px" onchange="loadMsgs(1)">
+                <option value="">全部类型</option>
+                <option value="text">文本</option>
+                <option value="image">图片</option>
+                <option value="voice">语音</option>
+                <option value="file">文件</option>
+              </select>
+              <select id="msg-chat-filter" class="btn btn-gray btn-sm" style="padding:5px 9px" onchange="loadMsgs(1)">
+                <option value="">全部会话</option>
+                <option value="private">私聊</option>
+                <option value="group">群聊</option>
+              </select>
               <button class="btn btn-primary btn-sm" onclick="loadMsgs(1)">搜索</button>
             </div>
             <div class="tbl-wrap">
@@ -490,6 +506,40 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle}
               <button class="btn btn-gray btn-sm" onclick="loadCodes()">刷新</button>
             </div>
             <div class="code-grid" id="codes-grid"><div class="empty"><p>加载中...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── AUDIT LOGS ─────────────────────────────────────────── -->
+      <div class="section" id="sec-audit">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">审计日志</span>
+            <button class="btn btn-primary btn-sm" onclick="loadAudit(1)">刷新</button>
+          </div>
+          <div class="card-body">
+            <div class="toolbar">
+              <select id="audit-action-filter" class="btn btn-gray btn-sm" style="padding:5px 9px" onchange="loadAudit(1)">
+                <option value="">全部操作</option>
+                <option value="user_disable">禁用用户</option>
+                <option value="user_enable">启用用户</option>
+                <option value="user_edit">编辑用户</option>
+                <option value="user_reset_password">重置密码</option>
+                <option value="group_delete">解散群组</option>
+                <option value="group_kick">踢出成员</option>
+                <option value="message_recall">撤回消息</option>
+                <option value="message_delete">删除消息</option>
+                <option value="invite_code_create">生成邀请码</option>
+                <option value="invite_code_delete">删除邀请码</option>
+              </select>
+            </div>
+            <div class="tbl-wrap">
+              <table>
+                <thead><tr><th>ID</th><th>操作者</th><th>操作类型</th><th>目标类型</th><th>目标</th><th>详情</th><th>IP</th><th>时间</th></tr></thead>
+                <tbody id="audit-tbody"><tr><td colspan="8" style="text-align:center;padding:28px;color:#aaa">加载中...</td></tr></tbody>
+              </table>
+            </div>
+            <div class="pagination" id="audit-pagination"></div>
           </div>
         </div>
       </div>
@@ -533,6 +583,53 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle}
     <div class="modal-actions" style="margin-top:16px">
       <button class="btn btn-gray" onclick="closeGenModal()">关闭</button>
       <button class="btn btn-primary" id="btn-gen-submit" onclick="genCodes()">生成</button>
+    </div>
+  </div>
+</div>
+
+<!-- User edit modal -->
+<div class="modal-overlay" id="user-edit-overlay">
+  <div class="modal" style="width:420px">
+    <h3>编辑用户</h3>
+    <div class="gen-form">
+      <div class="gen-row">
+        <div class="gen-field"><label>姓名</label><input type="text" id="edit-name" placeholder="显示名称"></div>
+        <div class="gen-field"><label>部门</label><input type="text" id="edit-dept" placeholder="部门"></div>
+      </div>
+      <div class="gen-row">
+        <div class="gen-field"><label>职位</label><input type="text" id="edit-pos" placeholder="职位"></div>
+        <div class="gen-field"><label>手机</label><input type="text" id="edit-phone" placeholder="手机号"></div>
+      </div>
+      <div class="gen-field"><label>邮箱</label><input type="email" id="edit-email" placeholder="邮箱"></div>
+      <hr style="border:none;border-top:1px solid #f0f0f0;margin:6px 0">
+      <div class="gen-field">
+        <label>重置密码（留空则不修改）</label>
+        <input type="password" id="edit-pwd" placeholder="新密码（至少6位）" autocomplete="new-password">
+      </div>
+    </div>
+    <input type="hidden" id="edit-uid">
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn btn-gray" onclick="closeUserEdit()">取消</button>
+      <button class="btn btn-primary" onclick="saveUserEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Group members modal -->
+<div class="modal-overlay" id="members-overlay">
+  <div class="modal" style="width:460px;max-height:80vh;overflow:hidden;display:flex;flex-direction:column">
+    <h3 id="members-title">群成员</h3>
+    <div style="overflow-y:auto;flex:1;margin:12px -24px 0;padding:0 24px">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>成员</th><th>账号</th><th>部门</th><th>角色</th><th>操作</th></tr></thead>
+          <tbody id="members-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <input type="hidden" id="members-gid">
+    <div class="modal-actions" style="margin-top:14px">
+      <button class="btn btn-gray" onclick="closeMembersModal()">关闭</button>
     </div>
   </div>
 </div>
@@ -678,9 +775,9 @@ function doLogout() {
 }
 
 // ─── Navigation ────────────────────────────────────────────────
-const sections = { dashboard:'sec-dashboard', users:'sec-users', groups:'sec-groups', messages:'sec-messages', invites:'sec-invites' };
-const titles   = { dashboard:'数据概览', users:'用户管理', groups:'群组管理', messages:'消息记录', invites:'邀请码管理' };
-const loaders  = { dashboard:loadDashboard, users:loadUsers, groups:loadGroups, messages:()=>loadMsgs(1), invites:loadCodes };
+const sections = { dashboard:'sec-dashboard', users:'sec-users', groups:'sec-groups', messages:'sec-messages', invites:'sec-invites', audit:'sec-audit' };
+const titles   = { dashboard:'数据概览', users:'用户管理', groups:'群组管理', messages:'消息记录', invites:'邀请码管理', audit:'审计日志' };
+const loaders  = { dashboard:loadDashboard, users:loadUsers, groups:loadGroups, messages:()=>loadMsgs(1), invites:loadCodes, audit:()=>loadAudit(1) };
 
 function nav(key, el) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -696,6 +793,7 @@ function showApp() {
   document.getElementById('login-wrap').classList.remove('show');
   document.getElementById('app').classList.add('show');
   loadDashboard();
+  startDashRefresh();
 }
 
 function showLogin() {
@@ -762,9 +860,12 @@ function renderUsers(rows) {
       <td>${u.status==='online' ? '<span><span class="dot dot-green"></span>在线</span>' : '<span><span class="dot dot-gray"></span>离线</span>'}</td>
       <td style="font-size:11.5px;color:#aaa">${fmtDate(u.created_at)}</td>
       <td>
-        <button class="btn btn-sm ${u.disabled?'btn-outline':'btn-warn'}" onclick="toggleUser(${u.id},${!!u.disabled})">
-          ${u.disabled?'启用':'禁用'}
-        </button>
+        <div class="td-actions">
+          <button class="btn btn-sm btn-gray" onclick="openUserEdit(${u.id})">编辑</button>
+          <button class="btn btn-sm ${u.disabled?'btn-outline':'btn-warn'}" onclick="toggleUser(${u.id},${!!u.disabled})">
+            ${u.disabled?'启用':'禁用'}
+          </button>
+        </div>
       </td>
     </tr>`).join('');
 }
@@ -815,7 +916,12 @@ function renderGroups(rows) {
       <td>${g.msg_count} 条</td>
       <td style="max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#888">${esc(g.announcement||'-')}</td>
       <td style="font-size:11.5px;color:#aaa">${fmtDate(g.created_at)}</td>
-      <td><button class="btn btn-sm btn-danger" onclick="dissolveGroup(${g.id})">解散</button></td>
+      <td>
+        <div class="td-actions">
+          <button class="btn btn-sm btn-gray" onclick="openMembersModal(${g.id},'${esc(g.name)}')">成员</button>
+          <button class="btn btn-sm btn-danger" onclick="dissolveGroup(${g.id})">解散</button>
+        </div>
+      </td>
     </tr>`).join('');
 }
 
@@ -850,10 +956,15 @@ function debounceLoadMsgs() {
 
 function loadMsgs(page) {
   msgPage = page;
-  const search = document.getElementById('msg-search') ? document.getElementById('msg-search').value.trim() : '';
+  const search   = (document.getElementById('msg-search')?.value || '').trim();
+  const msgType  = document.getElementById('msg-type-filter')?.value || '';
+  const chatType = document.getElementById('msg-chat-filter')?.value || '';
   const tbody = document.getElementById('msgs-tbody');
   tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:28px;color:#aaa">加载中...</td></tr>';
-  api('GET', `/api/messages?search=${encodeURIComponent(search)}&page=${page}&size=${msgSize}`)
+  const qs = new URLSearchParams({ search, page, size: msgSize });
+  if (msgType)  qs.set('msg_type',  msgType);
+  if (chatType) qs.set('chat_type', chatType);
+  api('GET', `/api/messages?${qs}`)
     .then(r => { msgTotal = r.total||0; renderMsgs(r.rows||[]); renderMsgPagination(); })
     .catch(() => toast('获取消息失败','error'));
 }
@@ -872,7 +983,12 @@ function renderMsgs(rows) {
       <td>${esc(m.target||'-')}</td>
       <td style="font-size:11.5px;color:#aaa;white-space:nowrap">${fmtDate(m.created_at)}</td>
       <td>${m.recalled ? '<span class="tag tag-red">已撤回</span>' : '<span class="tag tag-green">正常</span>'}</td>
-      <td>${m.recalled ? '<button class="btn btn-sm btn-gray" disabled>已撤回</button>' : `<button class="btn btn-sm btn-warn" onclick="recallMsg(${m.id})">撤回</button>`}</td>
+      <td>
+        <div class="td-actions">
+          ${m.recalled ? '<button class="btn btn-sm btn-gray" disabled>已撤回</button>' : `<button class="btn btn-sm btn-warn" onclick="recallMsg(${m.id})">撤回</button>`}
+          <button class="btn btn-sm btn-danger" onclick="deleteMsg(${m.id})">删除</button>
+        </div>
+      </td>
     </tr>`).join('');
 }
 
@@ -928,6 +1044,7 @@ function renderCodes(rows) {
         <div>创建者：${esc(c.created_by)}</div>
       </div>
       <div class="code-actions">
+        <button class="btn btn-sm btn-gray" onclick="copyCode('${esc(c.code)}')">复制</button>
         <button class="btn btn-sm btn-danger" onclick="deleteCode(&quot;${esc(c.id)}&quot;,&quot;${esc(c.code)}&quot;)">删除</button>
       </div>
     </div>`;
@@ -971,6 +1088,154 @@ function genCodes() {
     .catch(() => toast('生成失败','error'))
     .finally(() => { btn.disabled = false; btn.textContent = '生成'; });
 }
+
+// ─── User edit ────────────────────────────────────────────────
+function openUserEdit(id) {
+  const u = allUsers.find(x => x.id === id);
+  if (!u) return;
+  document.getElementById('edit-uid').value   = id;
+  document.getElementById('edit-name').value  = u.display_name || '';
+  document.getElementById('edit-dept').value  = u.department   || '';
+  document.getElementById('edit-pos').value   = u.position     || '';
+  document.getElementById('edit-phone').value = u.phone        || '';
+  document.getElementById('edit-email').value = u.email        || '';
+  document.getElementById('edit-pwd').value   = '';
+  document.getElementById('user-edit-overlay').classList.add('show');
+}
+function closeUserEdit() { document.getElementById('user-edit-overlay').classList.remove('show'); }
+document.getElementById('user-edit-overlay').onclick = e => { if (e.target === e.currentTarget) closeUserEdit(); };
+
+async function saveUserEdit() {
+  const id    = document.getElementById('edit-uid').value;
+  const body  = {
+    display_name: document.getElementById('edit-name').value.trim() || undefined,
+    department:   document.getElementById('edit-dept').value.trim() || undefined,
+    position:     document.getElementById('edit-pos').value.trim()  || undefined,
+    phone:        document.getElementById('edit-phone').value.trim()|| undefined,
+    email:        document.getElementById('edit-email').value.trim()|| undefined,
+  };
+  const pwd = document.getElementById('edit-pwd').value;
+  try {
+    await api('PUT', `/api/users/${id}`, body);
+    if (pwd) await api('POST', `/api/users/${id}/reset-password`, { password: pwd });
+    toast('保存成功');
+    closeUserEdit();
+    loadUsers();
+  } catch(e) { toast(e.error||'保存失败','error'); }
+}
+
+// ─── Group members ────────────────────────────────────────────
+function openMembersModal(gid, gname) {
+  document.getElementById('members-gid').value = gid;
+  document.getElementById('members-title').textContent = `群成员 — ${gname}`;
+  document.getElementById('members-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#aaa">加载中...</td></tr>';
+  document.getElementById('members-overlay').classList.add('show');
+  api('GET', `/api/groups/${gid}/members`).then(rows => {
+    const roleLabel = { owner:'群主', admin:'管理员', member:'成员' };
+    const roleTag   = { owner:'tag-orange', admin:'tag-blue', member:'tag-gray' };
+    document.getElementById('members-tbody').innerHTML = rows.length ? rows.map(m => `
+      <tr>
+        <td><strong>${esc(m.display_name)}</strong></td>
+        <td style="color:#576b95">${esc(m.username)}</td>
+        <td>${esc(m.department||'-')}</td>
+        <td><span class="tag ${roleTag[m.role]||'tag-gray'}">${roleLabel[m.role]||m.role}</span></td>
+        <td>${m.role==='owner' ? '<span style="color:#ccc;font-size:12px">群主</span>'
+          : `<button class="btn btn-sm btn-danger" onclick="kickMember(${gid},${m.id},'${esc(m.display_name)}')">踢出</button>`}</td>
+      </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px;color:#aaa">暂无成员</td></tr>';
+  }).catch(() => toast('获取成员失败','error'));
+}
+function closeMembersModal() { document.getElementById('members-overlay').classList.remove('show'); }
+document.getElementById('members-overlay').onclick = e => { if (e.target === e.currentTarget) closeMembersModal(); };
+
+function kickMember(gid, uid, name) {
+  confirm('踢出成员', `确定要将「${name}」移出群组吗？`, '踢出',
+    () => api('DELETE', `/api/groups/${gid}/members/${uid}`)
+      .then(r => { if (r.ok) { toast(`已移出「${name}」`); openMembersModal(gid, document.getElementById('members-title').textContent.replace('群成员 — ','')); loadGroups(); } else toast(r.error||'操作失败','error'); })
+      .catch(() => toast('操作失败','error'))
+  );
+}
+
+// ─── Message delete ───────────────────────────────────────────
+function deleteMsg(id) {
+  confirm('删除消息', '确定要永久删除该消息吗？此操作不可撤销。', '删除',
+    () => api('DELETE', `/api/messages/${id}`)
+      .then(r => { if (r.ok) { toast('消息已删除'); loadMsgs(msgPage); } else toast(r.error||'操作失败','error'); })
+      .catch(() => toast('操作失败','error'))
+  );
+}
+
+// ─── Copy invite code ─────────────────────────────────────────
+function copyCode(code) {
+  navigator.clipboard.writeText(code).then(() => toast('已复制到剪贴板')).catch(() => toast('复制失败','error'));
+}
+
+// ─── Audit logs ───────────────────────────────────────────────
+let auditPage = 1, auditTotal = 0, auditSize = 30;
+
+function loadAudit(page) {
+  auditPage = page;
+  const action = document.getElementById('audit-action-filter')?.value || '';
+  const tbody = document.getElementById('audit-tbody');
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:28px;color:#aaa">加载中...</td></tr>';
+  const qs = new URLSearchParams({ page, size: auditSize });
+  if (action) qs.set('action', action);
+  api('GET', `/api/audit-logs?${qs}`)
+    .then(r => { auditTotal = r.total||0; renderAudit(r.rows||[]); renderAuditPagination(); })
+    .catch(() => toast('获取审计日志失败','error'));
+}
+
+const auditActionLabel = {
+  user_disable:'禁用用户', user_enable:'启用用户', user_edit:'编辑用户',
+  user_reset_password:'重置密码', group_delete:'解散群组', group_kick:'踢出成员',
+  message_recall:'撤回消息', message_delete:'删除消息',
+  invite_code_create:'生成邀请码', invite_code_delete:'删除邀请码',
+};
+const auditActionTag = {
+  user_disable:'tag-red', user_enable:'tag-green', user_edit:'tag-blue',
+  user_reset_password:'tag-orange', group_delete:'tag-red', group_kick:'tag-orange',
+  message_recall:'tag-orange', message_delete:'tag-red',
+  invite_code_create:'tag-blue', invite_code_delete:'tag-red',
+};
+
+function renderAudit(rows) {
+  const tbody = document.getElementById('audit-tbody');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:28px;color:#aaa">暂无日志</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td><span style="color:#aaa;font-size:11.5px">#${r.id}</span></td>
+      <td><strong>${esc(r.actor_name||'-')}</strong></td>
+      <td><span class="tag ${auditActionTag[r.action]||'tag-gray'}">${auditActionLabel[r.action]||r.action}</span></td>
+      <td><span class="tag tag-gray">${esc(r.target_type||'-')}</span></td>
+      <td>${esc(r.target_name||r.target_id||'-')}</td>
+      <td style="font-size:12px;color:#888">${esc(r.details||'-')}</td>
+      <td style="font-family:monospace;font-size:11.5px;color:#aaa">${esc(r.ip_address||'-')}</td>
+      <td style="font-size:11.5px;color:#aaa;white-space:nowrap">${fmtDate(r.created_at)}</td>
+    </tr>`).join('');
+}
+
+function renderAuditPagination() {
+  const pages = Math.ceil(auditTotal / auditSize) || 1;
+  const pag = document.getElementById('audit-pagination');
+  let html = `<span class="pg-info">共 ${auditTotal} 条，第 ${auditPage}/${pages} 页</span>`;
+  html += `<button class="pg-btn" ${auditPage<=1?'disabled':''} onclick="loadAudit(1)">«</button>`;
+  html += `<button class="pg-btn" ${auditPage<=1?'disabled':''} onclick="loadAudit(${auditPage-1})">‹</button>`;
+  const start = Math.max(1, auditPage-2), end = Math.min(pages, auditPage+2);
+  for (let i=start;i<=end;i++) html += `<button class="pg-btn ${i===auditPage?'active':''}" onclick="loadAudit(${i})">${i}</button>`;
+  html += `<button class="pg-btn" ${auditPage>=pages?'disabled':''} onclick="loadAudit(${auditPage+1})">›</button>`;
+  html += `<button class="pg-btn" ${auditPage>=pages?'disabled':''} onclick="loadAudit(${pages})">»</button>`;
+  pag.innerHTML = html;
+}
+
+// ─── Dashboard auto-refresh ───────────────────────────────────
+let dashRefreshTimer = null;
+function startDashRefresh() {
+  stopDashRefresh();
+  dashRefreshTimer = setInterval(() => {
+    const sec = document.getElementById('sec-dashboard');
+    if (sec && sec.classList.contains('active')) loadDashboard();
+  }, 30000);
+}
+function stopDashRefresh() { clearInterval(dashRefreshTimer); }
 
 // ─── Init ──────────────────────────────────────────────────────
 if (token) {

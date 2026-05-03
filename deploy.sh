@@ -2,7 +2,29 @@
 set -e
 
 ROOT="/usr/local/wecom-clone"
+WEBROOT="/usr/local/wecom-clone"
+deploy_user="deploy"
+
+# ── 身份切换 ─────────────────────────────────────────────────────────────
+# 如果以 root 运行，降权到专用部署用户（必须事先创建）
+if [ "$(id -u)" = "0" ]; then
+  if id "$deploy_user" &>/dev/null; then
+    echo "[deploy $(date '+%H:%M:%S')] 降权到 $deploy_user 执行部署..."
+    exec su "$deploy_user" -c "bash '$0'"
+    exit
+  else
+    echo "[deploy $(date '+%H:%M:%S')] ⚠️  root 运行且无 deploy 用户，跳过降权"
+  fi
+fi
+
 cd "$ROOT"
+
+# ── 完整性校验：检查 WORK_TREE 未被篡改 ─────────────────────────────────
+# 简单检查：确保 .git 目录存在且为可信仓库
+if [ ! -d ".git" ]; then
+  echo "[deploy $(date '+%H:%M:%S')] ❌ .git 目录丢失，仓库完整性无法验证"
+  exit 1
+fi
 
 echo "[deploy $(date '+%H:%M:%S')] git pull..."
 git pull

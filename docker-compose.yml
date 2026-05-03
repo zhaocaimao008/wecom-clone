@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wecom-clone
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+      - "3002:3002"
+    volumes:
+      - ./server/uploads:/app/server/uploads
+      - ./server/wecom.db:/app/server/wecom.db
+      - ./server/.env:/app/server/.env:ro
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - ADMIN_PORT=3002
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Nginx reverse proxy (uncomment if needed)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: wecom-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #   depends_on:
+  #     - app
+
+  # Optional: Redis for session/cookie storage (uncomment if scaling)
+  # redis:
+  #   image: redis:alpine
+  #   container_name: wecom-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   command: redis-server --appendonly yes
+
+# volumes:
+#   redis-data:

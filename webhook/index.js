@@ -3,11 +3,17 @@ const crypto = require('crypto');
 const { execFile } = require('child_process');
 const path = require('path');
 
-const SECRET = process.env.WEBHOOK_SECRET || '';
-const PORT = parseInt(process.env.WEBHOOK_PORT) || 9000;
+const SECRET=process.env.WEBHOOK_SECRET || '';
+const PORT = (() => {
+  const p = parseInt(process.env.WEBHOOK_PORT);
+  if (isNaN(p) || p < 1 || p > 65535) return 9000;
+  return p;
+})();
+const MAX_BODY = 10 * 1024 * 1024; // 10MB max
 const DEPLOY_SCRIPT = path.join(__dirname, '..', 'deploy.sh');
 
 let deploying = false;
+let bodyLen = 0;
 
 function verifyGithub(payload, sig) {
   if (!sig) return !SECRET;
@@ -16,7 +22,7 @@ function verifyGithub(payload, sig) {
 }
 
 function verifyGitee(token) {
-  if (!SECRET) return true;
+  if (!SECRET) return false;  // 无密钥时拒绝一切
   return token === SECRET;
 }
 
@@ -28,7 +34,17 @@ const server = http.createServer((req, res) => {
   }
 
   let body = '';
-  req.on('data', chunk => { body += chunk; });
+  bodyLen = 0;
+  req.on('data', chunk => {
+    bodyLen += chunk.length;
+    if (bodyLen > MAX_BODY) {
+      req.destroy();
+      res.writeHead(413, { 'Content-Type': 'text/plain' });
+      res.end('Payload Too Large');
+      return;
+    }
+    body += chunk;
+  });
   req.on('end', () => {
     const isGithub = !!req.headers['x-github-event'];
     const isGitee  = !!req.headers['x-gitee-event'];
@@ -39,7 +55,8 @@ const server = http.createServer((req, res) => {
     } else if (isGitee) {
       valid = verifyGitee(req.headers['x-gitee-token']);
     } else {
-      valid = !SECRET;
+      // 无平台标识的请求，必须配置 SECRET 才允许
+      valid = !!SECRET;
     }
 
     if (!valid) {

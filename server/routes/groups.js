@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const authMiddleware = require('../middleware/auth');
 
 function isPrivileged(db, groupId, userId) {
@@ -31,13 +32,13 @@ module.exports = (db, io, connectedUsers) => {
   router.post('/', (req, res) => {
     const { name, memberIds = [] } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: '请输入群名称' });
-    if (memberIds.length < 1) return res.status(400).json({ error: '至少选择1位成员' });
-    const uniqueIds = [...new Set(memberIds.filter(id => id !== req.user.id))];
+    if (!Array.isArray(memberIds) || memberIds.length < 1) return res.status(400).json({ error: '至少选择1位成员' });
+    const uniqueIds = [...new Set(memberIds.filter(id => Number.isInteger(id) && id > 0 && id !== req.user.id))];
     const colors = ['#07c160','#576b95','#fa9d3b','#e64340','#10aec2'];
     const color = colors[Math.floor(Math.random() * colors.length)];
     let groupCode, tries = 0;
     do {
-      groupCode = String(Math.floor(10000000 + Math.random() * 90000000));
+      groupCode = String(crypto.randomInt(10000000, 100000000));
       tries++;
     } while (db.prepare('SELECT id FROM chat_groups WHERE group_code = ?').get(groupCode) && tries < 200);
     const gid = db.prepare('INSERT INTO chat_groups (name,avatar_color,owner_id,group_code) VALUES (?,?,?,?)')
@@ -58,13 +59,17 @@ module.exports = (db, io, connectedUsers) => {
 
   router.put('/:id', (req, res) => {
     const gid = parseInt(req.params.id);
+    if (isNaN(gid)) return res.status(400).json({ error: '无效的群组ID' });
     if (!isPrivileged(db, gid, req.user.id))
       return res.status(403).json({ error: '仅群主/管理员可操作' });
     const g = db.prepare('SELECT * FROM chat_groups WHERE id=?').get(gid);
     if (!g) return res.status(404).json({ error: '群组不存在' });
     const member = db.prepare('SELECT role FROM group_members WHERE group_id=? AND user_id=?').get(gid, req.user.id);
     const isOwner = member.role === 'owner';
-    const name         = isOwner && req.body.name !== undefined ? req.body.name : g.name;
+    if (isOwner && req.body.name !== undefined) {
+      if (typeof req.body.name !== 'string' || !req.body.name.trim()) return res.status(400).json({ error: '群名称不能为空' });
+    }
+    const name         = isOwner && req.body.name !== undefined ? req.body.name.trim() : g.name;
     const announcement = req.body.announcement !== undefined ? req.body.announcement : g.announcement;
     const mute_all     = req.body.mute_all !== undefined ? (req.body.mute_all ? 1 : 0) : g.mute_all;
     const restrict_add_friend    = req.body.restrict_add_friend !== undefined ? (req.body.restrict_add_friend ? 1 : 0) : g.restrict_add_friend;
@@ -81,7 +86,8 @@ module.exports = (db, io, connectedUsers) => {
     if (!isPrivileged(db, gid, req.user.id))
       return res.status(403).json({ error: '仅群主/管理员可添加成员' });
     const { userIds = [] } = req.body;
-    const uniqueIds = [...new Set(userIds)];
+    if (!Array.isArray(userIds)) return res.status(400).json({ error: 'userIds 必须为数组' });
+    const uniqueIds = [...new Set(userIds.filter(id => Number.isInteger(id) && id > 0))];
     const ins = db.prepare('INSERT OR IGNORE INTO group_members (group_id,user_id,role) VALUES (?,?,?)');
     uniqueIds.forEach(uid => ins.run(gid, uid, 'member'));
     const members = db.prepare(`
@@ -95,6 +101,7 @@ module.exports = (db, io, connectedUsers) => {
   router.delete('/:id/members/:userId', (req, res) => {
     const gid = parseInt(req.params.id);
     const targetId = parseInt(req.params.userId);
+    if (isNaN(gid) || isNaN(targetId)) return res.status(400).json({ error: '无效参数' });
     if (!isPrivileged(db, gid, req.user.id))
       return res.status(403).json({ error: '仅群主/管理员可移除成员' });
     const g = db.prepare('SELECT * FROM chat_groups WHERE id=?').get(gid);
@@ -117,6 +124,7 @@ module.exports = (db, io, connectedUsers) => {
   router.put('/:id/members/:userId/role', (req, res) => {
     const gid = parseInt(req.params.id);
     const targetId = parseInt(req.params.userId);
+    if (isNaN(gid) || isNaN(targetId)) return res.status(400).json({ error: '无效参数' });
     const { role } = req.body;
     const g = db.prepare('SELECT * FROM chat_groups WHERE id=?').get(gid);
     if (!g) return res.status(404).json({ error: '群组不存在' });
@@ -134,6 +142,7 @@ module.exports = (db, io, connectedUsers) => {
 
   router.delete('/:id', (req, res) => {
     const gid = parseInt(req.params.id);
+    if (isNaN(gid)) return res.status(400).json({ error: '无效的群组ID' });
     const g = db.prepare('SELECT * FROM chat_groups WHERE id=?').get(gid);
     if (!g) return res.status(404).json({ error: '群组不存在' });
     if (g.owner_id !== req.user.id) return res.status(403).json({ error: '仅群主可解散群' });
@@ -156,6 +165,7 @@ module.exports = (db, io, connectedUsers) => {
 
   router.post('/:id/quit', (req, res) => {
     const gid = parseInt(req.params.id);
+    if (isNaN(gid)) return res.status(400).json({ error: '无效的群组ID' });
     const g = db.prepare('SELECT * FROM chat_groups WHERE id=?').get(gid);
     if (!g) return res.status(404).json({ error: '群组不存在' });
     if (g.owner_id === req.user.id) return res.status(400).json({ error: '群主请先解散或转让群主' });

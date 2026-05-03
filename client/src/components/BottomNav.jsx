@@ -37,16 +37,6 @@ export default function BottomNav() {
         <span className="bnav-label">通讯录</span>
       </button>
 
-      {/* 发现（暂未激活） */}
-      <button className="bnav-btn bnav-disabled" disabled>
-        <span className="bnav-icon-wrap">
-          <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H7l5-8v4h4l-5 8z"/>
-          </svg>
-        </span>
-        <span className="bnav-label">发现</span>
-      </button>
-
       {/* 我 */}
       <button
         className={`bnav-btn ${activeTab === 'profile' ? 'active' : ''}`}

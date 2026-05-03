@@ -5,7 +5,7 @@ import { connectSocket } from '../socket';
 const PHONE_RE = /^1[3-9]\d{9}$/;
 const DEPTS = ['研发部','产品部','设计部','运营部','市场部','人事部','财务部','销售部'];
 
-export default function Login() {
+export default function Login({ isModal = false, onClose = null }) {
   // 'phone-pwd' | 'phone-code' | 'account' | 'register'
   const [mode, setMode] = useState('phone-pwd');
   const [form, setForm] = useState({
@@ -84,21 +84,32 @@ export default function Login() {
   const isLogin = mode !== 'register';
 
   return (
-    <div className="lp-page">
+    <div className={isModal ? 'lp-modal-inner' : 'lp-page'}>
       <div className="lp-box">
 
-        {/* ── Logo ── */}
-        <div className="lp-logo">
-          <div className="lp-logo-icon">
-            <svg viewBox="0 0 60 60" width="60" height="60" fill="none">
-              <rect width="60" height="60" rx="14" fill="#07c160"/>
-              <path d="M25 17c-6.6 0-12 4.5-12 10 0 2.9 1.5 5.5 3.9 7.3l-1.4 4.2 4.7-2.3c1.2.3 2.4.5 3.8.5 6.6 0 12-4.5 12-10S31.6 17 25 17z" fill="white" opacity=".95"/>
-              <path d="M41 24c-5.5 0-10 3.7-10 8.3 0 2.4 1.3 4.6 3.4 6.1l-1.3 3.8 4.2-2c1 .3 2.1.4 3.7.4 5.5 0 10-3.7 10-8.3S46.5 24 41 24z" fill="white"/>
-            </svg>
+        {/* ── Logo / Modal header ── */}
+        {isModal ? (
+          <div className="lp-modal-header">
+            <h2 className="lp-modal-title">添加账户</h2>
+            <button className="lp-modal-close" onClick={onClose} title="关闭">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+              </svg>
+            </button>
           </div>
-          <h1 className="lp-logo-title">企业微信</h1>
-          <p className="lp-logo-sub">连接企业，沟通未来</p>
-        </div>
+        ) : (
+          <div className="lp-logo">
+            <div className="lp-logo-icon">
+              <svg viewBox="0 0 60 60" width="60" height="60" fill="none">
+                <rect width="60" height="60" rx="14" fill="#07c160"/>
+                <path d="M25 17c-6.6 0-12 4.5-12 10 0 2.9 1.5 5.5 3.9 7.3l-1.4 4.2 4.7-2.3c1.2.3 2.4.5 3.8.5 6.6 0 12-4.5 12-10S31.6 17 25 17z" fill="white" opacity=".95"/>
+                <path d="M41 24c-5.5 0-10 3.7-10 8.3 0 2.4 1.3 4.6 3.4 6.1l-1.3 3.8 4.2-2c1 .3 2.1.4 3.7.4 5.5 0 10-3.7 10-8.3S46.5 24 41 24z" fill="white"/>
+              </svg>
+            </div>
+            <h1 className="lp-logo-title">企业密信</h1>
+            <p className="lp-logo-sub">连接企业，沟通未来</p>
+          </div>
+        )}
 
         {/* ── Mode tabs ── */}
         <div className="lp-tabs">
@@ -106,8 +117,10 @@ export default function Login() {
             onClick={() => switchMode('phone-pwd')}>手机登录</button>
           <button className={mode === 'account' ? 'active' : ''}
             onClick={() => switchMode('account')}>账号登录</button>
-          <button className={mode === 'register' ? 'active' : ''}
-            onClick={() => switchMode('register')}>注册</button>
+          {!isModal && (
+            <button className={mode === 'register' ? 'active' : ''}
+              onClick={() => switchMode('register')}>注册</button>
+          )}
         </div>
 
         {/* ── Form ── */}
@@ -232,10 +245,10 @@ export default function Login() {
         </form>
 
         {/* ── Demo hint ── */}
-        {isLogin && (
+        {isLogin && !isModal && (
           <div className="lp-demo">
             <p>演示：账号 <strong>admin</strong> 或手机号 <strong>13800138001</strong></p>
-            <p>密码均为 <strong>123456</strong></p>
+            <p>密码均为 <strong>Admin2024</strong></p>
           </div>
         )}
       </div>

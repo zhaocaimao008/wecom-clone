@@ -13,3 +13,9 @@ server/uploads/
 .env
 *.log
 .DS_Store
+.env.secrets
+desktop/
+monitoring/
+client/android/
+client/ios/
+server/public/

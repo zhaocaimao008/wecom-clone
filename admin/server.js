@@ -4,6 +4,7 @@ const path    = require('path');
 const crypto  = require('crypto');
 const express = require('/usr/local/wecom-clone/server/node_modules/express');
 const Database = require('/usr/local/wecom-clone/server/node_modules/better-sqlite3');
+const bcrypt = require('/usr/local/wecom-clone/server/node_modules/bcryptjs');
 
 const app = express();
 const db  = new Database(path.join(__dirname, '../server/wecom.db'));
@@ -29,6 +30,21 @@ db.exec(`
 `);
 try { db.exec('ALTER TABLE invite_codes ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP'); } catch (_) {}
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_id    TEXT,
+    actor_name  TEXT,
+    action      TEXT NOT NULL,
+    target_type TEXT,
+    target_id   TEXT,
+    target_name TEXT,
+    details     TEXT,
+    ip_address  TEXT,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
 app.use(express.json({ limit: '100kb' }));
 
 // ── Session store (TTL 7 days) ────────────────────────────────
@@ -43,6 +59,9 @@ function auth(req, res, next) {
     sessions.delete(token);
     return res.status(401).json({ error: '登录已过期，请重新登录', code: 'SESSION_EXPIRED' });
   }
+  // 附加用户信息到req用于审计日志
+  req.user = { username: sess.username };
+  req.clientIp = req.ip || req.connection.remoteAddress || null;
   next();
 }
 
@@ -67,6 +86,18 @@ function recordFailedAttempt(ip) {
   }
 }
 
+// ── Audit logging helper ────────────────────────────────────────────
+function auditLog(action, targetType, targetId, targetName, details = null) {
+  const ip = this?.req?.ip || this?.req?.connection?.remoteAddress || null;
+  // caller passes actorId/actorName via req.user set in auth middleware
+}
+
+function createAudit(actorId, actorName, action, targetType, targetId, targetName, details, ip) {
+  db.prepare(
+    'INSERT INTO audit_logs (actor_id, actor_name, action, target_type, target_id, target_name, details, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(actorId, actorName, action, targetType, targetId, targetName, details, ip);
+}
+
 // ── Login / Logout ─────────────────────────────────────────────
 app.post('/api/login', (req, res) => {
   const ip = req.ip || req.connection.remoteAddress || 'unknown';
@@ -74,14 +105,27 @@ app.post('/api/login', (req, res) => {
     return res.status(429).json({ error: '登录次数过多，请在 15 分钟后重试', code: 'RATE_LIMITED' });
   }
   const { username, password } = req.body || {};
-  if (username === 'admin' && password === 'admin123') {
-    loginAttempts.delete(ip);
-    const token = crypto.randomBytes(32).toString('hex');
-    sessions.set(token, { username, at: Date.now() });
-    return res.json({ token, expiresAt: Date.now() + SESSION_TTL });
+  if (!username || !password) {
+    recordFailedAttempt(ip);
+    return res.status(400).json({ error: '请输入用户名和密码', code: 'MISSING_CREDENTIALS' });
   }
-  recordFailedAttempt(ip);
-  res.status(401).json({ error: '用户名或密码错误', code: 'INVALID_CREDENTIALS' });
+  // 查询数据库中的管理员账号
+  const user = db.prepare('SELECT id, username, password, disabled FROM users WHERE username=? AND role=?').get(username, 'admin');
+  if (!user) {
+    recordFailedAttempt(ip);
+    return res.status(401).json({ error: '用户名或密码错误', code: 'INVALID_CREDENTIALS' });
+  }
+  if (user.disabled) {
+    return res.status(403).json({ error: '账号已被禁用', code: 'ACCOUNT_DISABLED' });
+  }
+  if (!bcrypt.compareSync(password, user.password)) {
+    recordFailedAttempt(ip);
+    return res.status(401).json({ error: '用户名或密码错误', code: 'INVALID_CREDENTIALS' });
+  }
+  loginAttempts.delete(ip);
+  const token = crypto.randomBytes(32).toString('hex');
+  sessions.set(token, { username, at: Date.now() });
+  res.json({ token, expiresAt: Date.now() + SESSION_TTL });
 });
 
 app.post('/api/logout', auth, (req, res) => {
@@ -128,7 +172,32 @@ app.put('/api/users/:id/toggle', auth, (req, res) => {
   }
   const disabled = u.disabled ? 0 : 1;
   db.prepare('UPDATE users SET disabled=? WHERE id=?').run(disabled, req.params.id);
+  // 审计日志
+  createAudit(req.user.username, req.user.username, disabled ? 'user_disable' : 'user_enable',
+    'user', u.id, u.username, null, req.clientIp);
   res.json({ disabled });
+});
+
+app.put('/api/users/:id', auth, (req, res) => {
+  const { display_name, department, position, phone, email } = req.body || {};
+  const u = db.prepare('SELECT id, username FROM users WHERE id=?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: '用户不存在' });
+  db.prepare(
+    'UPDATE users SET display_name=COALESCE(?,display_name), department=COALESCE(?,department), position=COALESCE(?,position), phone=COALESCE(?,phone), email=COALESCE(?,email) WHERE id=?'
+  ).run(display_name||null, department||null, position||null, phone||null, email||null, req.params.id);
+  createAudit(req.user.username, req.user.username, 'user_edit', 'user', u.id, u.username, null, req.clientIp);
+  res.json({ ok: true });
+});
+
+app.post('/api/users/:id/reset-password', auth, (req, res) => {
+  const { password } = req.body || {};
+  if (!password || password.length < 6) return res.status(400).json({ error: '密码至少 6 位' });
+  const u = db.prepare('SELECT id, username FROM users WHERE id=?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: '用户不存在' });
+  const hash = bcrypt.hashSync(password, 10);
+  db.prepare('UPDATE users SET password=? WHERE id=?').run(hash, req.params.id);
+  createAudit(req.user.username, req.user.username, 'user_reset_password', 'user', u.id, u.username, null, req.clientIp);
+  res.json({ ok: true });
 });
 
 // ── Groups ─────────────────────────────────────────────────────
@@ -144,7 +213,7 @@ app.get('/api/groups', auth, (_req, res) => {
 });
 
 app.delete('/api/groups/:id', auth, (req, res) => {
-  const g = db.prepare('SELECT id FROM chat_groups WHERE id=?').get(req.params.id);
+  const g = db.prepare('SELECT id, name FROM chat_groups WHERE id=?').get(req.params.id);
   if (!g) return res.status(404).json({ error: '群组不存在' });
   try {
     db.transaction(id => {
@@ -152,18 +221,51 @@ app.delete('/api/groups/:id', auth, (req, res) => {
       db.prepare('DELETE FROM messages      WHERE group_id=?').run(id);
       db.prepare('DELETE FROM chat_groups WHERE id=?').run(id);
     })(req.params.id);
+    // 审计日志
+    createAudit(req.user.username, req.user.username, 'group_delete',
+      'group', g.id, g.name, null, req.clientIp);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: '解散群组失败', code: 'TRANSACTION_ERROR' });
   }
 });
 
+app.get('/api/groups/:id/members', auth, (req, res) => {
+  const members = db.prepare(`
+    SELECT u.id, u.display_name, u.username, u.department, u.position, gm.role, gm.joined_at
+    FROM group_members gm JOIN users u ON gm.user_id=u.id
+    WHERE gm.group_id=?
+    ORDER BY CASE gm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.display_name
+  `).all(req.params.id);
+  res.json(members);
+});
+
+app.delete('/api/groups/:id/members/:userId', auth, (req, res) => {
+  const g = db.prepare('SELECT name, owner_id FROM chat_groups WHERE id=?').get(req.params.id);
+  if (!g) return res.status(404).json({ error: '群组不存在' });
+  if (String(g.owner_id) === String(req.params.userId)) return res.status(400).json({ error: '不能移除群主' });
+  const r = db.prepare('DELETE FROM group_members WHERE group_id=? AND user_id=?').run(req.params.id, req.params.userId);
+  if (!r.changes) return res.status(404).json({ error: '成员不存在' });
+  const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.params.userId);
+  createAudit(req.user.username, req.user.username, 'group_kick', 'group', req.params.id, g.name, `kicked_user=${u?.username}`, req.clientIp);
+  res.json({ ok: true });
+});
+
 // ── Messages ───────────────────────────────────────────────────
 app.get('/api/messages', auth, (req, res) => {
-  const search = req.query.search || '';
-  const page   = Math.max(1, parseInt(req.query.page) || 1);
-  const size   = Math.min(100, Math.max(1, parseInt(req.query.size) || 20));
-  const like   = `%${search}%`;
+  const search   = req.query.search   || '';
+  const msgType  = req.query.msg_type || '';
+  const chatType = req.query.chat_type || '';
+  const page     = Math.max(1, parseInt(req.query.page) || 1);
+  const size     = Math.min(100, Math.max(1, parseInt(req.query.size) || 20));
+  const like     = `%${search}%`;
+
+  const conditions = ['m.content LIKE ?'];
+  const params     = [like];
+  if (msgType)  { conditions.push('m.msg_type = ?');                       params.push(msgType); }
+  if (chatType === 'group')   { conditions.push('m.group_id IS NOT NULL'); }
+  if (chatType === 'private') { conditions.push('m.group_id IS NULL');     }
+  const where = conditions.join(' AND ');
 
   const rows = db.prepare(`
     SELECT m.id, m.content, m.msg_type, m.recalled, m.created_at,
@@ -174,20 +276,31 @@ app.get('/api/messages', auth, (req, res) => {
     LEFT JOIN users       s ON m.sender_id=s.id
     LEFT JOIN chat_groups g ON m.group_id=g.id
     LEFT JOIN users       r ON m.receiver_id=r.id
-    WHERE m.content LIKE ?
+    WHERE ${where}
     ORDER BY m.created_at DESC
     LIMIT ? OFFSET ?
-  `).all(like, size, (page - 1) * size);
+  `).all(...params, size, (page - 1) * size);
 
-  const total = db.prepare('SELECT count(*) c FROM messages WHERE content LIKE ?').get(like).c;
+  const total = db.prepare(`SELECT count(*) c FROM messages m WHERE ${where}`).get(...params).c;
   res.json({ rows, total, page, size });
 });
 
 app.put('/api/messages/:id/recall', auth, (req, res) => {
-  const m = db.prepare('SELECT recalled FROM messages WHERE id=?').get(req.params.id);
+  const m = db.prepare('SELECT recalled, sender_id FROM messages WHERE id=?').get(req.params.id);
   if (!m)         return res.status(404).json({ error: '消息不存在' });
   if (m.recalled) return res.status(400).json({ error: '消息已撤回' });
   db.prepare("UPDATE messages SET recalled=1, content='[该消息已被管理员撤回]' WHERE id=?").run(req.params.id);
+  // 审计日志
+  createAudit(req.user.username, req.user.username, 'message_recall',
+    'message', parseInt(req.params.id), null, `sender_id=${m.sender_id}`, req.clientIp);
+  res.json({ ok: true });
+});
+
+app.delete('/api/messages/:id', auth, (req, res) => {
+  const m = db.prepare('SELECT id, sender_id FROM messages WHERE id=?').get(req.params.id);
+  if (!m) return res.status(404).json({ error: '消息不存在' });
+  db.prepare('DELETE FROM messages WHERE id=?').run(req.params.id);
+  createAudit(req.user.username, req.user.username, 'message_delete', 'message', m.id, null, `sender_id=${m.sender_id}`, req.clientIp);
   res.json({ ok: true });
 });
 
@@ -225,24 +338,53 @@ app.post('/api/invite-codes', auth, (req, res) => {
 
   for (let i = 0; i < countN; i++) {
     const id = crypto.randomUUID();
-    const code = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const code = crypto.randomBytes(16).toString('base64url').slice(0, 20).toUpperCase();
     db.prepare(
       'INSERT INTO invite_codes (id, code, expires_at, created_by) VALUES (?, ?, ?, ?)'
     ).run(id, code, expiresAt, 'admin');
     results.push({ id, code, expires_at: expiresAt });
   }
-
+  // 审计日志
+  createAudit(req.user.username, req.user.username, 'invite_code_create',
+    'invite_code', null, null, `count=${countN},days=${daysN}`, req.clientIp);
   res.json({ ok: true, codes: results });
 });
 
 app.delete('/api/invite-codes/:id', auth, (req, res) => {
-  const r = db.prepare('SELECT id FROM invite_codes WHERE id=?').get(req.params.id);
+  const r = db.prepare('SELECT id, code FROM invite_codes WHERE id=?').get(req.params.id);
   if (!r) return res.status(404).json({ error: '邀请码不存在' });
   db.prepare('DELETE FROM invite_codes WHERE id=?').run(req.params.id);
+  // 审计日志
+  createAudit(req.user.username, req.user.username, 'invite_code_delete',
+    'invite_code', r.id, r.code, null, req.clientIp);
   res.json({ ok: true });
 });
 
-// ── Static files ───────────────────────────────────────────────
+// ── Audit Logs ────────────────────────────────────────────────────
+app.get('/api/audit-logs', auth, (req, res) => {
+  const page   = Math.max(1, parseInt(req.query.page) || 1);
+  const size   = Math.min(100, Math.max(1, parseInt(req.query.size) || 20));
+  const action = req.query.action || '';
+
+  let whereClause = '';
+  let params = [];
+  if (action) {
+    whereClause = 'WHERE action = ?';
+    params.push(action);
+  }
+
+  const rows = db.prepare(`
+    SELECT * FROM audit_logs
+    ${whereClause}
+    ORDER BY created_at DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, size, (page - 1) * size);
+
+  const total = db.prepare(`SELECT count(*) c FROM audit_logs ${whereClause}`).get(...params).c;
+  res.json({ rows, total, page, size });
+});
+
+// ── Static files ────────────────────────────────────────────────
 app.get("/", (_, res) => res.redirect("/index.html"));
 app.use(express.static(__dirname));
 

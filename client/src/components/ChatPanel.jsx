@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { AvatarCircle } from './Sidebar';
 import ChatWindow from './ChatWindow';
@@ -10,9 +10,55 @@ dayjs.extend(isToday);
 dayjs.extend(isYesterday);
 
 export default function ChatPanel() {
-  const { conversations, activeConv, fetchMessages, currentUser } = useStore();
+  const { conversations, activeConv, fetchMessages, fetchConversations, fetchContacts, currentUser } = useStore();
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState(null); // { conv, x, y }
+  const pressTimer = useRef(null);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('touchstart', close);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('touchstart', close); };
+  }, [ctxMenu]);
+
+  function startPress(conv, e) {
+    pressTimer.current = setTimeout(() => {
+      setCtxMenu({ conv, x: e?.clientX, y: e?.clientY });
+    }, 500);
+  }
+  function cancelPress() { clearTimeout(pressTimer.current); }
+
+  async function handleCtxAction(action) {
+    if (!ctxMenu) return;
+    const { conv } = ctxMenu;
+    setCtxMenu(null);
+    const convKey = conv.group_id ? `g:${conv.group_id}` : `p:${conv.peer_id}`;
+    try {
+      if (action === 'pin') {
+        await useStore.getState().api('/messages/conversations/settings', {
+          method: 'POST', body: { convKey, isPinned: conv.is_pinned ? 0 : 1 },
+        });
+        fetchConversations();
+      } else if (action === 'mute') {
+        await useStore.getState().api('/messages/conversations/settings', {
+          method: 'POST', body: { convKey, isMuted: conv.is_muted ? 0 : 1 },
+        });
+        fetchConversations();
+      } else if (action === 'delete') {
+        if (conv.group_id) {
+          await useStore.getState().api(`/groups/${conv.group_id}/quit`, { method: 'POST' });
+          fetchContacts();
+        } else {
+          await useStore.getState().api(`/users/friends/${conv.peer_id}`, { method: 'DELETE' });
+          fetchContacts();
+        }
+        fetchConversations();
+      }
+    } catch(e) { alert(e.message); }
+  }
 
   const filtered = conversations.filter(c =>
     c.name?.toLowerCase().includes(search.toLowerCase())
@@ -60,11 +106,18 @@ export default function ChatPanel() {
         {showCreate && <CreateGroupModal onClose={() => setShowCreate(false)} />}
 
         <div className="conv-items">
-          {filtered.map((c, i) => {
+          {filtered.map((c) => {
             const key = c.group_id ? `g${c.group_id}` : `p${c.peer_id}`;
             const preview = c.last_type === 'voice' ? '[语音]' : c.last_type === 'image' ? '[图片]' : c.last_message;
             return (
-              <div key={key} className={`conv-item ${isActive(c) ? 'active' : ''}`} onClick={() => openConv(c)}>
+              <div key={key}
+                className={`conv-item ${isActive(c) ? 'active' : ''} ${c.is_pinned ? 'pinned' : ''}`}
+                onClick={() => openConv(c)}
+                onTouchStart={e => startPress(c, e.touches[0])}
+                onTouchMove={cancelPress}
+                onTouchEnd={cancelPress}
+                onContextMenu={e => { e.preventDefault(); setCtxMenu({ conv: c, x: e.clientX, y: e.clientY }); }}
+              >
                 <div className="conv-avatar">
                   <AvatarCircle name={c.name} color={c.avatar_color} size={44} radius={c.group_id ? 10 : 22} />
                   {!c.group_id && (
@@ -73,8 +126,11 @@ export default function ChatPanel() {
                 </div>
                 <div className="conv-info">
                   <div className="conv-top">
-                    <span className="conv-name">{c.name}</span>
-                    <span className="conv-time">{fmtTime(c.created_at)}</span>
+                    <span className="conv-name">{c.is_muted ? '🔇 ' : ''}{c.name}</span>
+                    <div className="conv-top-right">
+                      {c.is_pinned && <span className="pin-icon">📌</span>}
+                      <span className="conv-time">{fmtTime(c.created_at)}</span>
+                    </div>
                   </div>
                   <div className="conv-bottom">
                     <span className="conv-preview">{preview}</span>
@@ -88,6 +144,23 @@ export default function ChatPanel() {
             <div className="empty-list">暂无会话</div>
           )}
         </div>
+
+        {/* Long-press context menu */}
+        {ctxMenu && (
+          <div className="conv-ctx-menu"
+            style={{ top: ctxMenu.y || 120, left: ctxMenu.x || 120 }}
+            onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
+            <button onClick={() => handleCtxAction('pin')}>
+              {ctxMenu.conv.is_pinned ? '取消置顶' : '置顶'}
+            </button>
+            <button onClick={() => handleCtxAction('mute')}>
+              {ctxMenu.conv.is_muted ? '取消静音' : '静音'}
+            </button>
+            <button className="ctx-delete" onClick={() => handleCtxAction('delete')}>
+              {ctxMenu.conv.group_id ? '退出群聊' : '删除好友'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Right chat ── */}

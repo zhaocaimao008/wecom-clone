@@ -2,11 +2,25 @@ import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { useStore } from '../store/useStore';
 import { AvatarCircle } from './Sidebar';
+import { SERVER } from '../config';
 
 const AVATAR_COLORS = [
   '#07c160','#576b95','#fa9d3b','#e64340','#10aec2',
   '#7d7d7d','#722ED1','#1989FA','#FF6B6B','#4ECDC4',
 ];
+
+const PRIVACY_ITEMS = [
+  { key: 'allow_search_phone',   label: '允许通过手机号添加我', defaultOn: true  },
+  { key: 'allow_search_account', label: '允许搜索我的账号',     defaultOn: true  },
+  { key: 'require_verify',       label: '加我为好友需要验证',   defaultOn: false },
+  { key: 'allow_moments',        label: '允许查看我的朋友圈',   defaultOn: true  },
+];
+
+function parsePrivacy(raw) {
+  let saved = {};
+  try { saved = raw ? JSON.parse(raw) : {}; } catch {}
+  return Object.fromEntries(PRIVACY_ITEMS.map(i => [i.key, saved[i.key] !== undefined ? saved[i.key] : i.defaultOn]));
+}
 
 function applyDarkMode(mode) {
   const root = document.documentElement;
@@ -20,8 +34,11 @@ function applyDarkMode(mode) {
   }
 }
 
+const MAX_ACCOUNTS = 15;
+
 export default function Profile() {
-  const { currentUser, api, updateCurrentUser, logout } = useStore();
+  const { currentUser, token, api, updateCurrentUser, logout,
+    accounts, activeAccountIdx, switchAccount, removeAccount, showAddAccountModal } = useStore();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(currentUser || {});
   const [saving, setSaving] = useState(false);
@@ -31,6 +48,8 @@ export default function Profile() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [notifyOn, setNotifyOn] = useState(() => localStorage.getItem('wc_notify') !== 'off');
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('wc_dark') || 'system');
+  const [showAccountMgmt, setShowAccountMgmt] = useState(false);
+  const [privacy, setPrivacy] = useState(() => parsePrivacy(currentUser?.privacy));
   const avatarFileRef = useRef(null);
 
   useEffect(() => {
@@ -41,7 +60,25 @@ export default function Profile() {
     return () => mq.removeEventListener('change', handler);
   }, [darkMode]);
 
+  // Reset form and editing state when the active account changes
+  useEffect(() => {
+    setForm(currentUser || {});
+    setEditing(false);
+    setMsg('');
+    setShowAccountMgmt(false);
+    setPrivacy(parsePrivacy(currentUser?.privacy));
+  }, [currentUser?.id]);
+
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
+
+  async function togglePrivacy(key) {
+    const next = { ...privacy, [key]: !privacy[key] };
+    setPrivacy(next);
+    try {
+      const user = await api('/users/me', { method: 'PUT', body: { privacy: JSON.stringify(next) } });
+      updateCurrentUser(user);
+    } catch {}
+  }
 
   async function save() {
     setSaving(true); setMsg('');
@@ -63,9 +100,9 @@ export default function Profile() {
     try {
       const form = new FormData();
       form.append('avatar', file);
-      const res = await fetch('/api/users/me/avatar', {
+      const res = await fetch(`${SERVER}/api/users/me/avatar`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${localStorage.getItem('wc_token')}` },
+        headers: { Authorization: `Bearer ${token}` },
         body: form,
       });
       const user = await res.json();
@@ -135,10 +172,9 @@ export default function Profile() {
           </div>
           <div className="profile-header-info">
             <h2>{currentUser.display_name}</h2>
-            <p>{currentUser.department} · {currentUser.position}</p>
             <span className="status-online-badge">在线</span>
             <div className="profile-id-row">
-              <span className="profile-id-label">企业微信号</span>
+              <span className="profile-id-label">企业密信号</span>
               <span className="profile-id-value">{currentUser.user_code}</span>
             </div>
           </div>
@@ -180,7 +216,10 @@ export default function Profile() {
             <div className="profile-form">
               {[
                 { key: 'display_name', label: '姓名' },
-                { key: 'phone', label: '手机' },
+                { key: 'department',   label: '部门' },
+                { key: 'position',     label: '职位' },
+                { key: 'phone',        label: '手机' },
+                { key: 'email',        label: '邮箱' },
               ].map(f => (
                 <div key={f.key} className="profile-field">
                   <label>{f.label}</label>
@@ -197,7 +236,10 @@ export default function Profile() {
               {[
                 { label: '账号', value: currentUser.username },
                 { label: '姓名', value: currentUser.display_name },
-                { label: '手机', value: currentUser.phone || '未设置' },
+                { label: '部门', value: currentUser.department || '未设置' },
+                { label: '职位', value: currentUser.position  || '未设置' },
+                { label: '手机', value: currentUser.phone     || '未设置' },
+                { label: '邮箱', value: currentUser.email     || '未设置' },
               ].map(f => (
                 <div key={f.label} className="info-row">
                   <span className="info-label">{f.label}</span>
@@ -233,12 +275,14 @@ export default function Profile() {
           </div>
           {showPrivacy && (
             <div className="privacy-sub">
-              {[
-                { label: '允许通过手机号添加我', defaultOn: true },
-                { label: '允许搜索我的账号', defaultOn: true },
-                { label: '加我为好友需要验证', defaultOn: false },
-                { label: '允许查看我的朋友圈', defaultOn: true },
-              ].map(item => <PrivacyRow key={item.label} label={item.label} defaultOn={item.defaultOn} />)}
+              {PRIVACY_ITEMS.map(item => (
+                <div key={item.key} className="settings-row privacy-row" onClick={() => togglePrivacy(item.key)} style={{ cursor: 'pointer' }}>
+                  <span className="settings-label" style={{ fontSize: 13 }}>{item.label}</span>
+                  <div className={`toggle-switch ${privacy[item.key] ? 'on' : ''}`}>
+                    <div className="toggle-knob" />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -249,31 +293,70 @@ export default function Profile() {
             <svg viewBox="0 0 24 24" width="16" height="16" fill="#ccc"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg>
           </div>
 
+          <div className="settings-row" onClick={() => setShowAccountMgmt(v => !v)} style={{ cursor: 'pointer' }}>
+            <span className="settings-icon">👤</span>
+            <span className="settings-label">账户管理</span>
+            <span className="settings-value">{accounts.length} 个账户已登录</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="#ccc"
+              style={{ transform: showAccountMgmt ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
+              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+            </svg>
+          </div>
+          {showAccountMgmt && (
+            <div className="profile-account-list">
+              {accounts.map((acc, idx) => (
+                <div
+                  key={idx}
+                  className={`profile-account-item ${idx === activeAccountIdx ? 'active' : ''}`}
+                  onClick={() => { if (idx !== activeAccountIdx) switchAccount(idx); }}
+                >
+                  <AvatarCircle name={acc.user?.display_name} color={acc.user?.avatar_color} url={acc.user?.avatar_url} size={36} radius={8} />
+                  <div className="profile-account-info">
+                    <div className="profile-account-name">{acc.user?.display_name}</div>
+                    <div className="profile-account-sub">{acc.user?.username}</div>
+                  </div>
+                  {idx === activeAccountIdx && <span className="account-active-dot" />}
+                  <button
+                    className="account-remove-btn"
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (confirm(`确认退出「${acc.user?.display_name}」？`)) removeAccount(idx);
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </svg>
+                  </button>
+                </div>
+              ))}
+              {accounts.length < MAX_ACCOUNTS ? (
+                <button className="profile-add-account-btn" onClick={showAddAccountModal}>
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                  </svg>
+                  添加账户
+                  <span className="account-add-limit">{accounts.length}/{MAX_ACCOUNTS}</span>
+                </button>
+              ) : (
+                <div className="account-limit-tip">已达到最多 {MAX_ACCOUNTS} 个账户上限</div>
+              )}
+            </div>
+          )}
+
           <div className="settings-row">
             <span className="settings-icon">📱</span>
-            <span className="settings-label">关于企业微信</span>
+            <span className="settings-label">关于企业密信</span>
             <span className="settings-value">v4.1.0</span>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="#ccc"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg>
           </div>
         </div>
 
-        <button className="btn-logout" onClick={logout}>退出登录</button>
+        <button className="btn-logout" onClick={logout}>退出当前账户</button>
       </div>
     </div>
   );
 }
 
-function PrivacyRow({ label, defaultOn }) {
-  const [on, setOn] = useState(defaultOn);
-  return (
-    <div className="settings-row privacy-row" onClick={() => setOn(v => !v)} style={{ cursor: 'pointer' }}>
-      <span className="settings-label" style={{ fontSize: 13 }}>{label}</span>
-      <div className={`toggle-switch ${on ? 'on' : ''}`}>
-        <div className="toggle-knob" />
-      </div>
-    </div>
-  );
-}
 
 function MyQRCode({ code, name }) {
   const [qrUrl, setQrUrl] = useState('');
@@ -307,7 +390,7 @@ function MyQRCode({ code, name }) {
             </div>
             <div className="qr-big-body">
               <img src={bigUrl} alt="QR" className="qr-big-img" />
-              <p className="qr-big-code">企业微信号：{code}</p>
+              <p className="qr-big-code">企业密信号：{code}</p>
               <p className="qr-big-tip">扫一扫上面的二维码，可以添加好友</p>
             </div>
           </div>

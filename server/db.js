@@ -1,5 +1,6 @@
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const path = require('path');
 
 const db = new Database(path.join(__dirname, 'wecom.db'));
@@ -11,9 +12,13 @@ db.pragma('foreign_keys = ON');
 ['mute_all', 'restrict_add_friend', 'restrict_private_chat'].forEach(col => {
   try { db.exec(`ALTER TABLE chat_groups ADD COLUMN ${col} INTEGER DEFAULT 0`); } catch (_) {}
 });
+try { db.exec('ALTER TABLE messages ADD COLUMN edited INTEGER DEFAULT 0'); } catch (_) {}
+try { db.exec('ALTER TABLE messages ADD COLUMN client_msg_id TEXT'); } catch (_) {}
 try { db.exec(`ALTER TABLE users ADD COLUMN avatar_url TEXT`); } catch (_) {}
 try { db.exec(`ALTER TABLE users ADD COLUMN user_code TEXT`); } catch (_) {}
 try { db.exec(`ALTER TABLE chat_groups ADD COLUMN group_code TEXT`); } catch (_) {}
+try { db.exec('ALTER TABLE message_reads ADD COLUMN read_at TEXT'); } catch (_) {}
+try { db.exec(`ALTER TABLE users ADD COLUMN privacy TEXT DEFAULT NULL`); } catch (_) {}
 
 // Assign unique 6-digit user_code to anyone missing one
 ;(function assignUserCodes() {
@@ -22,7 +27,7 @@ try { db.exec(`ALTER TABLE chat_groups ADD COLUMN group_code TEXT`); } catch (_)
   missing.forEach(u => {
     let code, tries = 0;
     do {
-      code = String(Math.floor(100000 + Math.random() * 900000));
+      code = String(crypto.randomInt(100000, 1000000));
       tries++;
     } while (db.prepare('SELECT id FROM users WHERE user_code = ?').get(code) && tries < 200);
     upd.run(code, u.id);
@@ -36,7 +41,7 @@ try { db.exec(`ALTER TABLE chat_groups ADD COLUMN group_code TEXT`); } catch (_)
   missing.forEach(g => {
     let code, tries = 0;
     do {
-      code = String(Math.floor(10000000 + Math.random() * 90000000));
+      code = String(crypto.randomInt(10000000, 100000000));
       tries++;
     } while (db.prepare('SELECT id FROM chat_groups WHERE group_code = ?').get(code) && tries < 200);
     upd.run(code, g.id);
@@ -60,10 +65,14 @@ try { db.exec(`ALTER TABLE chat_groups ADD COLUMN group_code TEXT`); } catch (_)
         msg_type TEXT DEFAULT 'text'
           CHECK (msg_type IN ('text','voice','image','file','card')),
         recalled INTEGER DEFAULT 0,
+        reply_to INTEGER,
+        edited INTEGER DEFAULT 0,
+        client_msg_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (sender_id) REFERENCES users(id)
       );
-      INSERT INTO messages_v2 SELECT * FROM messages;
+      INSERT INTO messages_v2 (id,sender_id,receiver_id,group_id,content,msg_type,recalled,created_at)
+        SELECT id,sender_id,receiver_id,group_id,content,msg_type,recalled,created_at FROM messages;
       DROP TABLE messages;
       ALTER TABLE messages_v2 RENAME TO messages;
     `);
@@ -73,6 +82,19 @@ try { db.exec(`ALTER TABLE chat_groups ADD COLUMN group_code TEXT`); } catch (_)
 })();
 
 // Migrations — new tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS message_reactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    emoji TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(message_id, user_id, emoji),
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`);
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS friend_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,6 +112,14 @@ db.exec(`
     user_id INTEGER NOT NULL,
     conv_key TEXT NOT NULL,
     last_read_id INTEGER DEFAULT 0,
+    PRIMARY KEY (user_id, conv_key)
+  );
+
+  CREATE TABLE IF NOT EXISTS conversation_settings (
+    user_id INTEGER NOT NULL,
+    conv_key TEXT NOT NULL,
+    is_pinned INTEGER DEFAULT 0,
+    is_muted INTEGER DEFAULT 0,
     PRIMARY KEY (user_id, conv_key)
   );
 `);
@@ -161,6 +191,9 @@ db.exec(`
     msg_type TEXT DEFAULT 'text'
       CHECK (msg_type IN ('text', 'voice', 'image', 'file')),
     recalled INTEGER DEFAULT 0,
+    reply_to INTEGER,
+    edited INTEGER DEFAULT 0,
+    client_msg_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (sender_id) REFERENCES users(id)
   );
@@ -173,10 +206,29 @@ db.exec(`
   );
 `);
 
+// Demo password reset migration: reset well-known demo accounts to a fixed password
+// (handles case where they were seeded with a random unknown password)
+;(function resetDemoPasswords() {
+  const DEMO_PWD = 'Admin2024';
+  const DEMO_USERS = ['admin','lisi','wangwu','zhaoliu','sunqi','zhouba','wujiu','zhengshi'];
+  const marker = db.prepare("SELECT id FROM users WHERE username='admin'").get();
+  if (!marker) return; // will be seeded fresh below
+  const checkUser = db.prepare("SELECT id, password FROM users WHERE username=?");
+  const updatePwd = db.prepare("UPDATE users SET password=? WHERE username=?");
+  const hash = bcrypt.hashSync(DEMO_PWD, 10);
+  DEMO_USERS.forEach(uname => {
+    const row = checkUser.get(uname);
+    if (row && !bcrypt.compareSync(DEMO_PWD, row.password)) {
+      updatePwd.run(hash, uname);
+    }
+  });
+})();
+
 // Seed demo data
 const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
 if (!existingUser) {
-  const hash = bcrypt.hashSync('123456', 10);
+  const DEMO_PWD = 'Admin2024';
+  const hash = bcrypt.hashSync(DEMO_PWD, 10);
   const colors = ['#07c160', '#576b95', '#fa9d3b', '#e64340', '#10aec2', '#7d7d7d'];
 
   const demoUsers = [

@@ -13,10 +13,10 @@ function Toggle({ checked, onChange, disabled }) {
 }
 
 export default function GroupManagePanel({ groupId, members, onClose, onMembersChanged }) {
-  const { currentUser, departments, api, fetchConversations, fetchContacts, activeConv, groups } = useStore();
+  const { currentUser, departments, api, fetchConversations, fetchContacts, clearMessages, activeConv, groups } = useStore();
   const [tab, setTab] = useState('members');
   const [editName, setEditName] = useState('');
-  const [editAnn, setEditAnn] = useState('');
+  const [editAnn, setEditAnn] = useState(null); // null = unchanged
   const [showAdd, setShowAdd] = useState(false);
   const [addSelected, setAddSelected] = useState(new Set());
   const [saving, setSaving] = useState(false);
@@ -75,7 +75,10 @@ export default function GroupManagePanel({ groupId, members, onClose, onMembersC
     try {
       await api(`/groups/${groupId}`, {
         method: 'PUT',
-        body: { name: editName || activeConv?.name, announcement: editAnn },
+        body: {
+          name: editName || activeConv?.name,
+          ...(editAnn !== null ? { announcement: editAnn } : {}),
+        },
       });
       await Promise.all([fetchConversations(), fetchContacts()]);
       flash('保存成功');
@@ -89,6 +92,15 @@ export default function GroupManagePanel({ groupId, members, onClose, onMembersC
       await api(`/groups/${groupId}`, { method: 'DELETE' });
       await Promise.all([fetchConversations(), fetchContacts()]);
       onClose();
+    } catch (e) { flash(e.message); }
+  }
+
+  async function clearGroupMessages() {
+    if (!confirm('确认清空全部群消息？所有成员都将看不到历史消息，此操作不可恢复！')) return;
+    try {
+      await api('/messages/clear-conversation', { method: 'DELETE', body: { groupId } });
+      clearMessages();
+      flash('消息已清空');
     } catch (e) { flash(e.message); }
   }
 
@@ -245,7 +257,9 @@ export default function GroupManagePanel({ groupId, members, onClose, onMembersC
           {isPrivileged && (
             <div className="gm-field">
               <label>群公告</label>
-              <textarea onChange={e => setEditAnn(e.target.value)}
+              <textarea
+                value={editAnn !== null ? editAnn : (groupInfo.announcement || '')}
+                onChange={e => setEditAnn(e.target.value)}
                 placeholder="编辑群公告..." rows={3} className="gm-input" />
             </div>
           )}
@@ -256,6 +270,10 @@ export default function GroupManagePanel({ groupId, members, onClose, onMembersC
             </button>
           )}
 
+          {isPrivileged && (
+            <button className="btn-dissolve" style={{ color: '#fa9d3b', borderColor: '#fad9a0', background: '#fff9ef', marginBottom: 8 }}
+              onClick={clearGroupMessages}>清空群消息</button>
+          )}
           {isOwner
             ? <button className="btn-dissolve" onClick={dissolveGroup}>解散群聊</button>
             : <button className="btn-dissolve" style={{ color: '#576b95', borderColor: '#c5cfe0', background: '#f0f3fa' }}

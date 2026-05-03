@@ -3,8 +3,20 @@ import jsQR from 'jsqr';
 import { useStore } from '../store/useStore';
 import { AvatarCircle } from './Sidebar';
 
+// Long-press hook: fires after 500ms hold, cancels on move/end
+function useLongPress(onLongPress) {
+  const timer = useRef(null);
+  const cancel = () => { clearTimeout(timer.current); timer.current = null; };
+  return {
+    onTouchStart: (e) => { e.stopPropagation(); timer.current = setTimeout(() => { onLongPress(); timer.current = null; }, 500); },
+    onTouchMove:  cancel,
+    onTouchEnd:   cancel,
+    onContextMenu: (e) => { e.preventDefault(); onLongPress(); },
+  };
+}
+
 export default function ContactPanel() {
-  const { departments, groups, fetchMessages, setActiveTab } = useStore();
+  const { contacts, departments, groups, fetchMessages, setActiveTab, fetchContacts, fetchConversations, api } = useStore();
   const { friendRequests, friendRequestCount } = useStore();
   const [selected, setSelected] = useState(null);
   const [expanded, setExpanded] = useState({});
@@ -12,6 +24,43 @@ export default function ContactPanel() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
   const [showRequests, setShowRequests] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState(null); // { type:'user'|'group', data, x, y }
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('touchstart', close);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('touchstart', close); };
+  }, [ctxMenu]);
+
+  async function handleCtxAction(action) {
+    if (!ctxMenu) return;
+    const { type, data } = ctxMenu;
+    setCtxMenu(null);
+    const convKey = type === 'user' ? `p:${data.id}` : `g:${data.id}`;
+    try {
+      if (action === 'pin' || action === 'mute') {
+        const conversations = useStore.getState().conversations;
+        const conv = conversations.find(c => type === 'user' ? c.peer_id === data.id : c.group_id === data.id);
+        const cur = conv?.[action === 'pin' ? 'is_pinned' : 'is_muted'] ?? 0;
+        await useStore.getState().api('/messages/conversations/settings', {
+          method: 'POST', body: { convKey, [action === 'pin' ? 'isPinned' : 'isMuted']: cur ? 0 : 1 },
+        });
+        fetchConversations();
+      } else if (action === 'delete') {
+        if (type === 'user') {
+          await useStore.getState().api(`/users/friends/${data.id}`, { method: 'DELETE' });
+          fetchContacts();
+        } else {
+          await useStore.getState().api(`/groups/${data.id}/quit`, { method: 'POST' });
+          fetchContacts();
+        }
+        fetchConversations();
+      }
+    } catch(e) { alert(e.message); }
+  }
 
   function toggle(dept) { setExpanded(e => ({ ...e, [dept]: !e[dept] })); }
 
@@ -23,12 +72,10 @@ export default function ContactPanel() {
     setActiveTab('messages');
   }
 
-  const allUsers = Object.values(departments).flat();
-  const filteredUsers = localSearch.trim()
-    ? allUsers.filter(u =>
+  const filteredContacts = localSearch.trim()
+    ? contacts.filter(u =>
         u.display_name.includes(localSearch) ||
-        (u.department && u.department.includes(localSearch)) ||
-        (u.position && u.position.includes(localSearch))
+        (u.username && u.username.includes(localSearch))
       )
     : null;
 
@@ -80,66 +127,54 @@ export default function ContactPanel() {
         <div className="contact-items">
           {/* ── Search results ── */}
           {localSearch.trim() && view === 'members' && (
-            filteredUsers.length === 0
+            filteredContacts.length === 0
               ? <div className="empty-list">未找到"{localSearch}"</div>
-              : filteredUsers.map(u => (
-                <div key={u.id}
-                  className={`contact-item ${selected?.type === 'user' && selected?.data?.id === u.id ? 'active' : ''}`}
-                  onClick={() => { setSelected({ type: 'user', data: u }); setShowRequests(false); }}>
-                  <div style={{ position: 'relative' }}>
-                    <AvatarCircle name={u.display_name} color={u.avatar_color} size={38} radius={19} />
-                    <span className={`status-dot-sm ${u.status === 'online' ? 'online' : ''}`} />
-                  </div>
-                  <div className="contact-info">
-                    <span className="contact-name">{u.display_name}</span>
-                    <span className="contact-position">{u.department} · {u.position}</span>
-                  </div>
-                </div>
+              : filteredContacts.map(u => (
+                <ContactItem key={u.id} u={u}
+                  active={selected?.type === 'user' && selected?.data?.id === u.id}
+                  onClick={() => { setSelected({ type: 'user', data: u }); setShowRequests(false); }}
+                  onLongPress={e => setCtxMenu({ type: 'user', data: u, x: e?.clientX, y: e?.clientY })}
+                />
               ))
           )}
 
-          {/* ── Department tree ── */}
-          {!localSearch.trim() && view === 'members' && Object.entries(departments).map(([dept, users]) => (
-            <div key={dept} className="dept-section">
-              <div className="dept-header" onClick={() => toggle(dept)}>
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="#666"
-                  style={{ transform: expanded[dept] === false ? 'rotate(-90deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>
-                  <path d="M7 10l5 5 5-5z"/>
-                </svg>
-                <span>{dept}</span>
-                <span className="dept-count">{users.length}人</span>
-              </div>
-              {expanded[dept] !== false && users.map(u => (
-                <div key={u.id}
-                  className={`contact-item ${selected?.type === 'user' && selected?.data?.id === u.id ? 'active' : ''}`}
-                  onClick={() => { setSelected({ type: 'user', data: u }); setShowRequests(false); }}>
-                  <div style={{ position: 'relative' }}>
-                    <AvatarCircle name={u.display_name} color={u.avatar_color} size={38} radius={19} />
-                    <span className={`status-dot-sm ${u.status === 'online' ? 'online' : ''}`} />
-                  </div>
-                  <div className="contact-info">
-                    <span className="contact-name">{u.display_name}</span>
-                    <span className="contact-position">{u.position}</span>
-                  </div>
+          {/* ── Contacts list ── */}
+          {!localSearch.trim() && view === 'members' && (
+            contacts.length === 0
+              ? <div className="empty-list" style={{ padding: '32px 16px', color: '#999', textAlign: 'center', fontSize: 13 }}>
+                  暂无好友，点击右上角添加
                 </div>
-              ))}
-            </div>
-          ))}
+              : contacts.map(u => (
+                <ContactItem key={u.id} u={u}
+                  active={selected?.type === 'user' && selected?.data?.id === u.id}
+                  onClick={() => { setSelected({ type: 'user', data: u }); setShowRequests(false); }}
+                  onLongPress={e => setCtxMenu({ type: 'user', data: u, x: e?.clientX, y: e?.clientY })}
+                />
+              ))
+          )}
 
           {/* ── Groups ── */}
           {view === 'groups' && groups.map(g => (
-            <div key={g.id}
-              className={`contact-item ${selected?.type === 'group' && selected?.data?.id === g.id ? 'active' : ''}`}
-              onClick={() => { setSelected({ type: 'group', data: g }); setShowRequests(false); }}>
-              <AvatarCircle name={g.name} color={g.avatar_color} size={38} radius={10} />
-              <div className="contact-info">
-                <span className="contact-name">{g.name}</span>
-                <span className="contact-position">{g.member_count}人</span>
-              </div>
-            </div>
+            <GroupItem key={g.id} g={g}
+              active={selected?.type === 'group' && selected?.data?.id === g.id}
+              onClick={() => { setSelected({ type: 'group', data: g }); setShowRequests(false); }}
+              onLongPress={() => setCtxMenu({ type: 'group', data: g })}
+            />
           ))}
         </div>
       </div>
+
+      {/* Long-press context menu */}
+      {ctxMenu && (
+        <div className="conv-ctx-menu" style={{ top: ctxMenu.y || '50%', left: ctxMenu.x || '50%' }}
+          onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
+          <button onClick={() => handleCtxAction('pin')}>置顶</button>
+          <button onClick={() => handleCtxAction('mute')}>静音</button>
+          <button className="ctx-delete" onClick={() => handleCtxAction('delete')}>
+            {ctxMenu.type === 'group' ? '退出群聊' : '删除好友'}
+          </button>
+        </div>
+      )}
 
       {/* Add friend modal */}
       {showAddModal && (
@@ -179,17 +214,20 @@ export default function ContactPanel() {
 
 /* ── Friend Request List ──────────────────────────────── */
 function FriendRequestList({ onClose }) {
-  const { friendRequests, api, fetchContacts, removeFriendRequest } = useStore();
+  const { friendRequests, api, fetchContacts, fetchFriendRequests, removeFriendRequest } = useStore();
   const [msgs, setMsgs] = useState({});
 
   async function handle(fromId, action) {
     try {
       await api(`/users/friend-requests/${fromId}`, { method: 'PUT', body: { action } });
-      removeFriendRequest(fromId);
-      await fetchContacts();
       setMsgs(m => ({ ...m, [fromId]: action === 'accept' ? '已添加好友' : '已忽略' }));
     } catch (e) {
-      setMsgs(m => ({ ...m, [fromId]: e.message } ));
+      // Already processed — still clean up local state
+      setMsgs(m => ({ ...m, [fromId]: '已处理' }));
+    } finally {
+      removeFriendRequest(fromId);
+      fetchFriendRequests();
+      if (action === 'accept') fetchContacts();
     }
   }
 
@@ -206,7 +244,6 @@ function FriendRequestList({ onClose }) {
             <AvatarCircle name={r.display_name} color={r.avatar_color} size={44} radius={22} />
             <div className="freq-info">
               <span className="freq-name">{r.display_name}</span>
-              <span className="freq-dept">{r.department} · {r.position}</span>
               {r.message && <span className="freq-msg">"{r.message}"</span>}
             </div>
             <div className="freq-actions">
@@ -260,7 +297,7 @@ function AddChoose({ onId, onScan }) {
         </span>
         <div className="add-choose-info">
           <span className="add-choose-title">ID添加好友</span>
-          <span className="add-choose-sub">通过企业微信号搜索</span>
+          <span className="add-choose-sub">通过企业密信号搜索</span>
         </div>
         <svg viewBox="0 0 24 24" width="16" height="16" fill="#ccc"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
       </button>
@@ -312,7 +349,7 @@ function AddById({ api, onSelect }) {
         <input
           ref={inputRef}
           className="modal-input"
-          placeholder="输入6位企业微信号"
+          placeholder="输入6位企业密信号"
           value={q}
           inputMode="numeric"
           maxLength={6}
@@ -326,7 +363,7 @@ function AddById({ api, onSelect }) {
       {result === null && (
         <div className="add-search-hint">
           <svg viewBox="0 0 24 24" width="40" height="40" fill="#e0e0e0"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
-          <p>输入对方的6位企业微信号</p>
+          <p>输入对方的6位企业密信号</p>
         </div>
       )}
       {result === false && <div className="add-search-hint"><p>未找到该用户</p></div>}
@@ -336,7 +373,7 @@ function AddById({ api, onSelect }) {
             <AvatarCircle name={result.display_name} color={result.avatar_color} url={result.avatar_url} size={44} radius={22} />
             <div className="add-result-info">
               <span className="add-result-name">{result.display_name}</span>
-              <span className="add-result-sub">企业微信号：{result.user_code}</span>
+              <span className="add-result-sub">企业密信号：{result.user_code}</span>
             </div>
             <div className="add-result-action">
               {result.is_contact
@@ -421,7 +458,7 @@ function AddByScan({ api, onSelect, onClose }) {
             <AvatarCircle name={found.display_name} color={found.avatar_color} url={found.avatar_url} size={44} radius={22} />
             <div className="add-result-info">
               <span className="add-result-name">{found.display_name}</span>
-              <span className="add-result-sub">企业微信号：{found.user_code}</span>
+              <span className="add-result-sub">企业密信号：{found.user_code}</span>
             </div>
             <div className="add-result-action">
               {found.is_contact
@@ -452,7 +489,7 @@ function AddByScan({ api, onSelect, onClose }) {
               <span className="scan-line" />
             </div>
           </div>
-          <p className="scan-tip">将对方的企业微信二维码对准框内</p>
+          <p className="scan-tip">将对方的企业密信二维码对准框内</p>
         </>
       )}
     </div>
@@ -546,6 +583,33 @@ function EmptyDetail() {
         <path d="M40 20c-7.7 0-14 6.3-14 14s6.3 14 14 14 14-6.3 14-14-6.3-14-14-14zm0 4c5.5 0 10 4.5 10 10S45.5 44 40 44s-10-4.5-10-10 4.5-10 10-10zm0 28c-9.33 0-28 4.67-28 14v4h56v-4c0-9.33-18.67-14-28-14z" fill="#ccc"/>
       </svg>
       <p>选择联系人查看详情</p>
+    </div>
+  );
+}
+
+function ContactItem({ u, active, onClick, onLongPress }) {
+  const lp = useLongPress(onLongPress);
+  return (
+    <div className={`contact-item ${active ? 'active' : ''}`} onClick={onClick} {...lp}>
+      <div style={{ position: 'relative' }}>
+        <AvatarCircle name={u.display_name} color={u.avatar_color} size={38} radius={19} />
+        <span className={`status-dot-sm ${u.status === 'online' ? 'online' : ''}`} />
+      </div>
+      <div className="contact-info">
+        <span className="contact-name">{u.display_name}</span>
+      </div>
+    </div>
+  );
+}
+
+function GroupItem({ g, active, onClick, onLongPress }) {
+  const lp = useLongPress(onLongPress);
+  return (
+    <div className={`contact-item ${active ? 'active' : ''}`} onClick={onClick} {...lp}>
+      <AvatarCircle name={g.name} color={g.avatar_color} size={38} radius={10} />
+      <div className="contact-info">
+        <span className="contact-name">{g.name}</span>
+      </div>
     </div>
   );
 }

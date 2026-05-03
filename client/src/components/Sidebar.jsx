@@ -1,5 +1,6 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
+import AccountSwitcher from './AccountSwitcher';
 
 const NAV = [
   {
@@ -20,27 +21,16 @@ const NAV = [
       </svg>
     ),
   },
-  {
-    id: 'workstation',
-    label: '工作台',
-    icon: (
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-        <path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/>
-      </svg>
-    ),
-  },
 ];
 
 export default function Sidebar() {
-  const { activeTab, setActiveTab, currentUser, logout, conversations, friendRequestCount } = useStore();
+  const { activeTab, setActiveTab, logout, conversations, friendRequestCount } = useStore();
 
   const totalUnread = conversations.reduce((n, c) => n + (c.unread_count || 0), 0);
 
   return (
     <div className="sidebar">
-      <div className="sidebar-avatar" title={currentUser?.display_name}>
-        <AvatarCircle name={currentUser?.display_name} color={currentUser?.avatar_color} url={currentUser?.avatar_url} size={36} radius={8} />
-      </div>
+      <AccountSwitcher />
 
       <nav className="sidebar-nav">
         {NAV.map(n => (

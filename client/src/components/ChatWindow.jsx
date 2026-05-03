@@ -13,7 +13,7 @@ dayjs.extend(isYesterday);
 const EMOJIS = ['😀','😂','🥰','😎','🤔','😅','🙏','👍','👎','❤️','🔥','✅','⚠️','🎉','💯','🚀','😭','🤣','😊','🎊','💪','👏','🌟','💡'];
 
 export default function ChatWindow() {
-  const { activeConv, messages, currentUser, typingUsers, groups, clearActiveConv, contacts } = useStore();
+  const { activeConv, messages, currentUser, token, typingUsers, groups, clearActiveConv, contacts, readReceipts } = useStore();
   const [input, setInput] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
   const [showMore, setShowMore] = useState(false);
@@ -24,11 +24,23 @@ export default function ChatWindow() {
   const [recording, setRecording] = useState(false);
   const [recordMs, setRecordMs] = useState(0);
   const [members, setMembers] = useState([]);
+  // ── @mention state ────────────────────────────────────────────────
+  const [showMentionPicker, setShowMentionPicker] = useState(false);
+  const [mentionSearch, setMentionSearch] = useState('');
+  const [mentionFilter, setMentionFilter] = useState([]);
+  // ── Reply-to state ────────────────────────────────────────────────
+  const [replyingTo, setReplyingTo] = useState(null);
+  // ── Reactions state (messageId -> {emoji -> [userId]}) ────────────
+  const [reactions, setReactions] = useState({});
   const bottomRef = useRef(null);
   const msgAreaRef = useRef(null);
   const inputRef = useRef(null);
-  const albumRef = useRef(null);
-  const cameraRef = useRef(null);
+  const imageUploadRef = useRef(null);
+  const fileUploadRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const cameraUploadRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordTimerRef = useRef(null);
   const socket = getSocket();
@@ -40,7 +52,15 @@ export default function ChatWindow() {
 
   useEffect(() => { scrollToBottom(); }, [messages]);
 
-  // Scroll to bottom when mobile keyboard opens
+  useEffect(() => {
+    if (!socket || !currentUser) return;
+    messages.forEach(msg => {
+      if (msg.sender_id !== currentUser.id && msg.id) {
+        socket.emit('mark_read', { messageId: msg.id });
+      }
+    });
+  }, [messages]);
+
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
@@ -51,37 +71,90 @@ export default function ChatWindow() {
 
   useEffect(() => {
     setInput(''); setShowEmoji(false); setShowMore(false); setShowCallOptions(false); setShowManage(false); setVoiceMode(false);
+    setShowMentionPicker(false); setMentionSearch(''); setMentionFilter([]);
+    setReplyingTo(null); setHasMore(true); setLoadingMore(false);
     if (activeConv?.type === 'group') loadMembers(activeConv.id);
   }, [activeConv?.id]);
 
   function loadMembers(gid) {
     fetch(`/api/users/groups/${gid}/members`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('wc_token')}` }
+      headers: { Authorization: `Bearer ${useStore.getState().token}` }
     }).then(r => r.json()).then(setMembers);
   }
 
-  function closeAll() { setShowEmoji(false); setShowMore(false); setShowCallOptions(false); }
+  function closeAll() { setShowEmoji(false); setShowMore(false); setShowCallOptions(false); setShowMentionPicker(false); }
 
   const sendMessage = useCallback(() => {
     if (!input.trim() || !socket) return;
     const payload = activeConv.type === 'private'
       ? { receiverId: activeConv.id, content: input.trim() }
       : { groupId: activeConv.id, content: input.trim() };
+    if (replyingTo) { payload.replyToId = replyingTo.id; setReplyingTo(null); }
     socket.emit('send_message', payload);
     setInput(''); setShowEmoji(false); setShowMore(false);
-  }, [input, activeConv, socket]);
+  }, [input, activeConv, socket, replyingTo]);
 
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   }
 
   function handleInputChange(e) {
-    setInput(e.target.value);
+    const val = e.target.value;
+    setInput(val);
     if (socket && activeConv?.type === 'private')
       socket.emit('typing', { receiverId: activeConv.id, isTyping: true });
+
+    // ── @mention detection ─────────────────────────────────────────
+    if (activeConv?.type === 'group') {
+      const atIdx = val.lastIndexOf('@');
+      if (atIdx !== -1 && (atIdx === 0 || /\s/.test(val[atIdx - 1]))) {
+        const afterAt = val.slice(atIdx + 1);
+        if (!afterAt.includes(' ')) {
+          const search = afterAt.toLowerCase();
+          setMentionSearch(search);
+          setMentionFilter(members.filter(m => !search || m.display_name?.toLowerCase().includes(search)));
+          setShowMentionPicker(true);
+        } else {
+          setShowMentionPicker(false);
+        }
+      } else {
+        setShowMentionPicker(false);
+      }
+    }
+  }
+
+  function insertMention(member) {
+    const atIdx = input.lastIndexOf('@');
+    const before = input.slice(0, atIdx);
+    const after = input.slice(atIdx).replace(/@[^ ]*/, '');
+    setInput((before + '@' + member.display_name + ' ' + after).trim());
+    setShowMentionPicker(false);
+    inputRef.current?.focus();
   }
 
   function recallMsg(msgId) { socket?.emit('recall_message', { messageId: msgId }); }
+  function deleteMsg(msgId) { socket?.emit('delete_message', { messageId: msgId }); }
+
+  // ── Reactions ──────────────────────────────────────────────────────
+  function toggleReaction(msgId, emoji) {
+    const userId = currentUser?.id;
+    if (!userId || !socket) return;
+    socket.emit('toggle_reaction', { messageId: msgId, emoji });
+    setReactions(prev => {
+      const msgReactions = prev[msgId] || {};
+      const emojiUsers = msgReactions[emoji] || [];
+      const hasReacted = emojiUsers.includes(userId);
+      const updated = {
+        ...msgReactions,
+        [emoji]: hasReacted ? emojiUsers.filter(id => id !== userId) : [...emojiUsers, userId]
+      };
+      if (updated[emoji].length === 0) delete updated[emoji];
+      return { ...prev, [msgId]: updated };
+    });
+  }
+
+  function openReply(msg) { setReplyingTo(msg); inputRef.current?.focus(); }
+  function closeReply() { setReplyingTo(null); }
 
   async function startRecording() {
     try {
@@ -106,7 +179,7 @@ export default function ChatWindow() {
   function stopRecording() { mediaRecorderRef.current?.stop(); }
 
   async function uploadVoice(blob, durationMs) {
-    const token = localStorage.getItem('wc_token');
+    const token = useStore.getState().token;
     const form = new FormData();
     form.append('audio', blob, `voice-${Date.now()}.webm`);
     form.append('durationMs', durationMs);
@@ -119,12 +192,60 @@ export default function ChatWindow() {
       const msg = await res.json();
       if (res.ok) {
         useStore.getState().addMessage({ ...msg, type: 'voice' });
-        const payload = activeConv.type === 'private'
-          ? { receiverId: activeConv.id, content: msg.voiceUrl, msgType: 'voice', durationMs }
-          : { groupId: activeConv.id, content: msg.voiceUrl, msgType: 'voice', durationMs };
-        socket?.emit('send_message', payload);
       }
     } catch { alert('语音上传失败'); }
+  }
+
+  async function handleImageSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('image', file);
+    if (activeConv.type === 'private') form.append('receiverId', activeConv.id);
+    else form.append('groupId', activeConv.id);
+    try {
+      const res = await fetch('/api/messages/image', { method: 'POST', headers: { Authorization: `Bearer ${useStore.getState().token}` }, body: form });
+      const msg = await res.json();
+      if (res.ok) { useStore.getState().addMessage({ ...msg, type: 'image' }); }
+    } catch { alert('图片上传失败'); }
+    e.target.value = '';
+  }
+
+  async function handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    const form = new FormData();
+    form.append('file', file);
+    if (activeConv.type === 'private') form.append('receiverId', activeConv.id);
+    else form.append('groupId', activeConv.id);
+    try {
+      const res = await fetch('/api/messages/file', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${useStore.getState().token}` },
+        body: form,
+      });
+      const msg = await res.json();
+      if (res.ok) useStore.getState().addMessage({ ...msg, type: 'file' });
+      else alert(msg.error || '文件发送失败');
+    } catch { alert('文件发送失败'); }
+    setUploading(false);
+    e.target.value = '';
+  }
+
+  async function handleScroll(e) {
+    if (loadingMore || !hasMore) return;
+    if (e.target.scrollTop < 60) {
+      setLoadingMore(true);
+      const prevHeight = msgAreaRef.current.scrollHeight;
+      const got = await useStore.getState().loadMoreMessages();
+      if (!got) setHasMore(false);
+      requestAnimationFrame(() => {
+        if (msgAreaRef.current)
+          msgAreaRef.current.scrollTop = msgAreaRef.current.scrollHeight - prevHeight;
+      });
+      setLoadingMore(false);
+    }
   }
 
   function sendCard(user) {
@@ -201,7 +322,9 @@ export default function ChatWindow() {
       )}
 
       {/* ── Messages ── */}
-      <div className="messages-area" ref={msgAreaRef} onClick={closeAll}>
+      <div className="messages-area" ref={msgAreaRef} onClick={closeAll} onScroll={handleScroll}>
+        {loadingMore && <div className="load-more-tip">加载中…</div>}
+        {!hasMore && messages.length > 0 && <div className="load-more-tip">已加载全部消息</div>}
         {messages.map((msg, i) => {
           const isMine = msg.sender_id === currentUser?.id;
           const prevMsg = messages[i - 1];
@@ -212,7 +335,14 @@ export default function ChatWindow() {
               {showDate && <div className="date-separator"><span>{formatDate(msg.created_at)}</span></div>}
               {msg.recalled
                 ? <div className="recalled-msg">{isMine ? '你' : msg.sender_name} 撤回了一条消息</div>
-                : <MessageBubble msg={msg} isMine={isMine} showAvatar={showAvatar} onRecall={recallMsg} />
+                : <MessageBubble msg={msg} isMine={isMine} showAvatar={showAvatar} onRecall={recallMsg}
+                    onDelete={deleteMsg}
+                    onReply={() => openReply(msg)} onReact={(emoji) => toggleReaction(msg.id, emoji)}
+                    reactions={reactions[msg.id] || {}} currentUserId={currentUser?.id}
+                    messages={messages} readReceipts={readReceipts}
+                    isPrivate={activeConv?.type === 'private'}
+                    myGroupRole={myGroupRole}
+                  />
               }
             </React.Fragment>
           );
@@ -234,6 +364,41 @@ export default function ChatWindow() {
           <div className="mute-banner">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
             全员禁言中，仅群主和管理员可发言
+          </div>
+        )}
+
+        {/* ── Reply-to quote ── */}
+        {replyingTo && (
+          <div className="reply-quote">
+            <div className="reply-quote-content">
+              <span className="reply-quote-name">{replyingTo.sender_name}: </span>
+              <span className="reply-quote-text">
+                {replyingTo.type === 'voice' ? '🎤 语音消息' :
+                 replyingTo.type === 'image' ? '🖼️ 图片' :
+                 replyingTo.type === 'card' ? '📇 名片' :
+                 replyingTo.type === 'file' ? '📎 文件' :
+                 (replyingTo.content || '').slice(0, 60)}
+              </span>
+            </div>
+            <button className="reply-quote-close" onClick={closeReply}>✕</button>
+          </div>
+        )}
+
+        {/* ── @mention picker ── */}
+        {showMentionPicker && activeConv?.type === 'group' && (
+          <div className="mention-picker">
+            <div className="mention-picker-header">选择要@的成员</div>
+            <div className="mention-picker-list">
+              {mentionFilter.length === 0 ? (
+                <div className="mention-picker-empty">没有匹配的成员</div>
+              ) : mentionFilter.map(m => (
+                <div key={m.id} className="mention-picker-item" onClick={() => insertMention(m)}>
+                  <AvatarCircle name={m.display_name} color={m.avatar_color} size={28} radius={14} />
+                  <span>{m.display_name}</span>
+                  <span className="mention-picker-dept">{m.department}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -296,24 +461,31 @@ export default function ChatWindow() {
           </div>
         )}
 
-        {/* Hidden file inputs */}
-        <input ref={albumRef} type="file" accept="image/*" style={{ display: 'none' }} />
-        <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} />
+        {/* Hidden inputs */}
+        <input ref={imageUploadRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageSelect} />
+        <input ref={cameraUploadRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleImageSelect} />
+        <input ref={fileUploadRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.json,image/*,video/*" style={{ display: 'none' }} onChange={handleFileSelect} />
 
         {/* More panel */}
         {showMore && (
           <div className="wx-more-panel" onClick={e => e.stopPropagation()}>
-            <button className="wx-more-item" onClick={() => albumRef.current?.click()}>
+            <button className="wx-more-item" onClick={() => imageUploadRef.current?.click()}>
               <span className="wx-more-icon" style={{ background: '#1989FA' }}>
                 <svg viewBox="0 0 24 24" width="26" height="26" fill="white"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
               </span>
               <span>相册</span>
             </button>
-            <button className="wx-more-item" onClick={() => cameraRef.current?.click()}>
+            <button className="wx-more-item" onClick={() => cameraUploadRef.current?.click()}>
               <span className="wx-more-icon" style={{ background: '#07c160' }}>
                 <svg viewBox="0 0 24 24" width="26" height="26" fill="white"><path d="M20 5h-3.17L15 3H9L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-8 12c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.65 0-3 1.35-3 3s1.35 3 3 3 3-1.35 3-3-1.35-3-3-3z"/></svg>
               </span>
               <span>拍摄</span>
+            </button>
+            <button className="wx-more-item" onClick={() => fileUploadRef.current?.click()}>
+              <span className="wx-more-icon" style={{ background: '#10aec2' }}>
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="white"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>
+              </span>
+              <span>文件</span>
             </button>
             <button className="wx-more-item" onClick={e => { e.stopPropagation(); setShowCallOptions(v => !v); }}>
               <span className="wx-more-icon" style={{ background: '#FA8C16' }}>
@@ -404,18 +576,128 @@ function CardPickerModal({ contacts, onClose, onSelect }) {
   );
 }
 
-/* ── Message Bubble ── */
-function playVoice(url) { new Audio(url).play().catch(() => {}); }
+/* ── useAuthUrl: fetch a protected /uploads/... URL with JWT, return a blob objectURL ── */
+function useAuthUrl(url) {
+  const [src, setSrc] = useState(null);
+  useEffect(() => {
+    if (!url) return;
+    if (url.startsWith('data:') || url.startsWith('blob:')) { setSrc(url); return; }
+    const token = useStore.getState().token;
+    let objectUrl = null;
+    let cancelled = false;
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.blob() : Promise.reject())
+      .then(blob => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [url]);
+  return src;
+}
 
-function MessageBubble({ msg, isMine, showAvatar, onRecall }) {
-  const [showMenu, setShowMenu] = useState(false);
-  const menuRef = useRef(null);
-  const canRecall = isMine && (Date.now() - new Date(msg.created_at).getTime()) < 120000;
-  const isVoice = msg.type === 'voice';
-  const isCard = msg.type === 'card';
+/* ── Voice Player ── */
+function VoicePlayer({ msg, isMine }) {
+  const [playing, setPlaying] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const blobUrl = useAuthUrl(msg.voiceUrl);
+  const audioRef = useRef(null);
+  const timerRef = useRef(null);
+  const durationSec = Math.max(1, Math.floor((msg.durationMs || 0) / 1000));
+
+  useEffect(() => () => {
+    audioRef.current?.pause();
+    clearInterval(timerRef.current);
+  }, []);
 
   useEffect(() => {
-    const handler = e => { if (!menuRef.current?.contains(e.target)) setShowMenu(false); };
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    setPlaying(false);
+    setElapsed(0);
+    clearInterval(timerRef.current);
+  }, [blobUrl]);
+
+  function toggle() {
+    if (!blobUrl) return;
+    if (playing) {
+      audioRef.current?.pause();
+      clearInterval(timerRef.current);
+      setPlaying(false);
+    } else {
+      if (!audioRef.current) {
+        audioRef.current = new Audio(blobUrl);
+        audioRef.current.onended = () => {
+          setPlaying(false);
+          setElapsed(0);
+          clearInterval(timerRef.current);
+        };
+      }
+      audioRef.current.currentTime = 0;
+      setElapsed(0);
+      audioRef.current.play().catch(() => {});
+      setPlaying(true);
+      if (!isMine) getSocket()?.emit('mark_read', { messageId: msg.id });
+      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+    }
+  }
+
+  const displaySec = playing ? Math.max(0, durationSec - elapsed) : durationSec;
+  const barHeights = [3, 5, 8, 5, 9, 6, 4, 7, 3];
+
+  return (
+    <div className={`voice-player ${playing ? 'playing' : ''}`}
+      onClick={toggle}
+      style={!blobUrl ? { opacity: 0.6, cursor: 'default' } : {}}>
+      <div className="voice-play-btn">
+        {playing
+          ? <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          : <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        }
+      </div>
+      <div className="voice-bars">
+        {barHeights.map((h, i) => (
+          <span key={i} className="voice-bar" style={{ '--h': `${h}px`, animationDelay: `${i * 0.07}s` }} />
+        ))}
+      </div>
+      <span className="voice-duration">{displaySec}"</span>
+    </div>
+  );
+}
+
+/* ── Message Bubble ── */
+
+async function downloadWithAuth(url, filename) {
+  const token = useStore.getState().token;
+  try {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) return;
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename || '文件';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  } catch {}
+}
+
+function MessageBubble({ msg, isMine, showAvatar, onRecall, onDelete, onReply, onReact, reactions, currentUserId, messages, readReceipts, isPrivate, myGroupRole }) {
+  const [showMenu, setShowMenu] = useState(false);
+  const [showReactions, setShowReactions] = useState(false);
+  const [showReceipts, setShowReceipts] = useState(false);
+  const menuRef = useRef(null);
+  const canRecall = isMine && (Date.now() - new Date(msg.created_at).getTime()) < 300000;
+  const isVoice = msg.type === 'voice';
+  const isCard = msg.type === 'card';
+  const isFile = msg.type === 'file';
+  const isImage = msg.type === 'image';
+
+  useEffect(() => {
+    const handler = e => { if (!menuRef.current?.contains(e.target)) { setShowMenu(false); setShowReactions(false); } };
     if (showMenu) document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showMenu]);
@@ -423,11 +705,27 @@ function MessageBubble({ msg, isMine, showAvatar, onRecall }) {
   let cardData = null;
   if (isCard) {
     try {
-      cardData = msg.name
-        ? msg
-        : (typeof msg.content === 'string' ? JSON.parse(msg.content) : msg);
+      cardData = msg.name ? msg : (typeof msg.content === 'string' ? JSON.parse(msg.content) : msg);
     } catch {}
   }
+
+  let fileData = null;
+  // formatMessage already extracts fileUrl/fileName onto msg; fall back to JSON parse for legacy
+  if (isFile) {
+    try { fileData = msg.fileUrl ? msg : (typeof msg.content === 'string' ? JSON.parse(msg.content) : msg); } catch {}
+  }
+  // formatMessage already extracts imageUrl onto msg; fall back to JSON parse for legacy
+  let imageData = null;
+  if (isImage) {
+    try { imageData = msg.imageUrl ? msg : (typeof msg.content === 'string' ? JSON.parse(msg.content) : msg); } catch {}
+  }
+  const imageSrc = useAuthUrl(imageData?.imageUrl || null);
+
+  // Find replied message
+  const replyRef = msg.reply_to_id ?? msg.reply_to;
+  const replyToMsg = replyRef ? messages.find(m => m.id === replyRef) : null;
+
+  const reactionEntries = Object.entries(reactions || {}).filter(([, users]) => users.length > 0);
 
   return (
     <div className={`msg-row ${isMine ? 'mine' : 'theirs'}`}>
@@ -439,14 +737,21 @@ function MessageBubble({ msg, isMine, showAvatar, onRecall }) {
       <div className="msg-body">
         {!isMine && showAvatar && <div className="msg-sender-name">{msg.sender_name}</div>}
         <div className="msg-content-wrap" onContextMenu={e => { e.preventDefault(); setShowMenu(true); }}>
+          {/* Reply-to quote */}
+          {replyToMsg && (
+            <div className="msg-reply-quote">
+              <span className="msg-reply-name">{replyToMsg.sender_name}: </span>
+              <span className="msg-reply-text">
+                {replyToMsg.type === 'voice' ? '🎤 语音' :
+                 replyToMsg.type === 'image' ? '🖼️ 图片' :
+                 replyToMsg.type === 'card' ? '📇 名片' :
+                 replyToMsg.type === 'file' ? '📎 文件' :
+                 (replyToMsg.content || '').slice(0, 40)}
+              </span>
+            </div>
+          )}
           <div className={`msg-bubble ${isMine ? 'bubble-mine' : 'bubble-theirs'} ${isCard ? 'bubble-card' : ''}`}>
-            {isVoice && (
-              <div className="voice-message" onClick={() => playVoice(msg.voiceUrl)}>
-                <span className="voice-icon">🎤</span>
-                <div className="voice-wave">〰️〰️〰️</div>
-                <span className="voice-duration">{Math.floor((msg.durationMs || 0) / 1000)}"</span>
-              </div>
-            )}
+            {isVoice && <VoicePlayer msg={msg} isMine={isMine} />}
             {isCard && cardData && (
               <div className="card-bubble">
                 <div className="card-bubble-top">
@@ -459,21 +764,114 @@ function MessageBubble({ msg, isMine, showAvatar, onRecall }) {
                 <div className="card-bubble-footer">个人名片</div>
               </div>
             )}
-            {!isVoice && !isCard && msg.content}
+            {isImage && imageData && (
+              <div className="image-message" onClick={() => imageSrc && window.open(imageSrc, '_blank')}>
+                {imageSrc
+                  ? <img src={imageSrc} alt="图片" style={{maxWidth: 200, maxHeight: 200, borderRadius: 8}} />
+                  : <div style={{width: 120, height: 80, borderRadius: 8, background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aaa', fontSize: 12}}>加载中…</div>
+                }
+              </div>
+            )}
+            {isFile && fileData && (
+              <div className="file-message" onClick={() => downloadWithAuth(fileData.fileUrl, fileData.fileName)}>
+                <div className="file-icon">📎</div>
+                <div className="file-info">
+                  <div className="file-name">{fileData.fileName || '文件'}</div>
+                  <div className="file-size">{fileData.fileSize ? (fileData.fileSize > 1024*1024 ? (fileData.fileSize/1024/1024).toFixed(1)+'MB' : (fileData.fileSize/1024).toFixed(0)+'KB') : ''}</div>
+                </div>
+              </div>
+            )}
+            {!isVoice && !isCard && !isImage && !isFile && msg.content}
           </div>
-          <span className="msg-time">{dayjs(msg.created_at).format('HH:mm')}</span>
+          <span className="msg-time">
+            {isMine && (() => {
+              const cnt = readReceipts?.[msg.id] || 0;
+              if (!cnt) return null;
+              if (isPrivate) return <span className="msg-read-status">已读</span>;
+              const canSee = myGroupRole === 'owner' || myGroupRole === 'admin';
+              if (!canSee) return null;
+              return (
+                <span className="msg-read-status msg-read-group" onClick={e => { e.stopPropagation(); setShowReceipts(true); }}>
+                  已读 {cnt}
+                </span>
+              );
+            })()}
+            {dayjs(msg.created_at).format('HH:mm')}
+          </span>
+          {showReceipts && (
+            <ReadReceiptsPopup messageId={msg.id} onClose={() => setShowReceipts(false)} />
+          )}
+          {/* Reactions */}
+          {reactionEntries.length > 0 && (
+            <div className="msg-reactions">
+              {reactionEntries.map(([emoji, users]) => (
+                <span key={emoji} className={`reaction-badge ${users.includes(currentUserId) ? 'mine' : ''}`}
+                  onClick={() => onReact(emoji)}>
+                  {emoji} {users.length}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         {showMenu && (
           <div className="ctx-menu" ref={menuRef}>
-            {!isVoice && !isCard && (
+            {!isVoice && !isCard && !isFile && (
               <button onClick={() => { navigator.clipboard.writeText(msg.content); setShowMenu(false); }}>复制</button>
             )}
+            <button onClick={() => { onReply(); setShowMenu(false); }}>引用回复</button>
+            <button onClick={() => { setShowReactions(v => !v); setShowMenu(false); }}>添加反应</button>
             {canRecall && <button onClick={() => { onRecall(msg.id); setShowMenu(false); }}>撤回</button>}
+            {isMine && <button className="ctx-delete" onClick={() => { if (confirm('确认删除这条消息？对方也将看不到此消息。')) { onDelete(msg.id); setShowMenu(false); } }}>删除</button>}
             <button onClick={() => setShowMenu(false)}>取消</button>
+          </div>
+        )}
+        {/* Reaction picker */}
+        {showReactions && (
+          <div className="reaction-picker" ref={menuRef}>
+            {EMOJIS.map(e => (
+              <button key={e} className="reaction-emoji" onClick={() => { onReact(e); setShowReactions(false); }}>{e}</button>
+            ))}
           </div>
         )}
       </div>
       {isMine && <div className="msg-avatar" />}
+    </div>
+  );
+}
+
+/* ── Read Receipts Popup ── */
+function ReadReceiptsPopup({ messageId, onClose }) {
+  const [readers, setReaders] = useState(null);
+  const token = useStore(s => s.token);
+
+  useEffect(() => {
+    fetch(`/api/messages/read-receipts/${messageId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(setReaders)
+      .catch(() => setReaders([]));
+  }, [messageId]);
+
+  return (
+    <div className="receipts-overlay" onClick={onClose}>
+      <div className="receipts-popup" onClick={e => e.stopPropagation()}>
+        <div className="receipts-header">
+          <span>已读成员</span>
+          <button onClick={onClose}>✕</button>
+        </div>
+        <div className="receipts-list">
+          {readers === null && <div className="receipts-loading">加载中…</div>}
+          {readers?.length === 0 && <div className="receipts-empty">暂无人已读</div>}
+          {readers?.map(r => (
+            <div key={r.user_id} className="receipts-item">
+              <AvatarCircle name={r.display_name} color={r.avatar_color} size={32} radius={16} />
+              <span className="receipts-name">{r.display_name}</span>
+              <span className="receipts-time">{dayjs(r.read_at).format('HH:mm')}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
