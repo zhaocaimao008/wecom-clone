@@ -393,15 +393,20 @@ export const useStore = create((set, get) => ({
   // ── HTTP helper ───────────────────────────────────────────────────────────────
   async api(path, opts = {}) {
     const token = get().token;
-    const res = await fetch(`${API}${path}`, {
-      ...opts,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...opts.headers,
-      },
-      body: opts.body ? JSON.stringify(opts.body) : undefined,
-    });
+    let res;
+    try {
+      res = await fetch(`${API}${path}`, {
+        ...opts,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...opts.headers,
+        },
+        body: opts.body ? JSON.stringify(opts.body) : undefined,
+      });
+    } catch {
+      throw new Error('网络连接失败，请稍后重试');
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || '请求失败');

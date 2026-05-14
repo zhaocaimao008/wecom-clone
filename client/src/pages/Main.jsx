@@ -60,6 +60,7 @@ export default function Main() {
         {activeTab === 'contacts'    && <ContactPanel />}
         {activeTab === 'groups'      && <GroupsPanel />}
         {activeTab === 'profile'     && <Profile />}
+        {activeTab === 'settings'    && <Profile section="settings" />}
       </div>
       {!inChat && <BottomNav />}
       <CallScreen />

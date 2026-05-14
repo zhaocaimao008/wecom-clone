@@ -3,7 +3,6 @@ import { useStore } from '../store/useStore';
 import { connectSocket } from '../socket';
 
 const PHONE_RE = /^1[3-9]\d{9}$/;
-const DEPTS = ['研发部','产品部','设计部','运营部','市场部','人事部','财务部','销售部'];
 
 export default function Login({ isModal = false, onClose = null }) {
   // 'phone-pwd' | 'phone-code' | 'account' | 'register'
@@ -12,27 +11,25 @@ export default function Login({ isModal = false, onClose = null }) {
     phone: '', password: '', code: '',
     username: '', acc_pwd: '',
     display_name: '', reg_phone: '', reg_pwd: '', reg_confirm: '',
-    department: '研发部', position: '员工', invite_code: '',
+    invite_code: '',
   });
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(0);
-  const [demoCode, setDemoCode] = useState('');
   const timerRef = useRef(null);
   const { api, setToken } = useStore();
 
   useEffect(() => () => clearInterval(timerRef.current), []);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
-  const switchMode = (m) => { setMode(m); setError(''); setDemoCode(''); };
+  const switchMode = (m) => { setMode(m); setError(''); };
 
   async function sendCode() {
     if (!PHONE_RE.test(form.phone)) { setError('请输入正确的11位手机号'); return; }
     setLoading(true); setError('');
     try {
       const res = await api('/auth/send-code', { method: 'POST', body: { phone: form.phone } });
-      setDemoCode(res.demo_code);
       setCountdown(60);
       clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
@@ -66,8 +63,6 @@ export default function Login({ isModal = false, onClose = null }) {
             password: form.reg_pwd,
             password_confirm: form.reg_confirm,
             display_name: form.display_name,
-            department: form.department,
-            position: form.position,
             invite_code: form.invite_code,
           },
         });
@@ -177,13 +172,6 @@ export default function Login({ isModal = false, onClose = null }) {
                 </div>
               )}
 
-              {demoCode && (
-                <div className="lp-demo-code">
-                  <span>【演示】验证码</span>
-                  <strong>{demoCode}</strong>
-                </div>
-              )}
-
               <button
                 type="button"
                 className="lp-switch-link"
@@ -219,7 +207,7 @@ export default function Login({ isModal = false, onClose = null }) {
                   value={form.reg_phone} onChange={set('reg_phone')} required autoComplete="tel" />
               </div>
               <div className="lp-field">
-                <input className="lp-input lp-input-full" placeholder="姓名"
+                <input className="lp-input lp-input-full" placeholder="昵称"
                   value={form.display_name} onChange={set('display_name')} required />
               </div>
               <div className="lp-field">
@@ -244,13 +232,6 @@ export default function Login({ isModal = false, onClose = null }) {
           </button>
         </form>
 
-        {/* ── Demo hint ── */}
-        {isLogin && !isModal && (
-          <div className="lp-demo">
-            <p>演示：账号 <strong>admin</strong> 或手机号 <strong>13800138001</strong></p>
-            <p>密码均为 <strong>Admin2024</strong></p>
-          </div>
-        )}
       </div>
     </div>
   );

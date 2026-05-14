@@ -19,6 +19,13 @@ try { db.exec(`ALTER TABLE users ADD COLUMN user_code TEXT`); } catch (_) {}
 try { db.exec(`ALTER TABLE chat_groups ADD COLUMN group_code TEXT`); } catch (_) {}
 try { db.exec('ALTER TABLE message_reads ADD COLUMN read_at TEXT'); } catch (_) {}
 try { db.exec(`ALTER TABLE users ADD COLUMN privacy TEXT DEFAULT NULL`); } catch (_) {}
+try { db.exec(`ALTER TABLE users ADD COLUMN can_invite INTEGER DEFAULT 0`); } catch (_) {}
+try { db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT`); } catch (_) {}
+try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_code ON users(user_code) WHERE user_code IS NOT NULL`); } catch (_) {}
+try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_msg_id ON messages(sender_id, client_msg_id) WHERE client_msg_id IS NOT NULL`); } catch (_) {}
+
+db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('allow_user_invite', '0')").run();
 
 // Assign unique 6-digit user_code to anyone missing one
 ;(function assignUserCodes() {

@@ -38,7 +38,7 @@ export function connectSocket(token) {
       if (grp) title = `${grp.name}：${msg.sender_name}`;
     }
 
-    // In-app floating toast (always, regardless of Electron/browser)
+    // In-app floating toast (always shown)
     useStore.getState().addToast({
       title,
       body: bodyText,
@@ -48,12 +48,13 @@ export function connectSocket(token) {
       convType,
     });
 
-    // Electron OS notification
-    if (window.electronAPI) {
-      window.electronAPI.showNotification({ title, body: bodyText, convId, convType });
-    // Browser Notification API (non-Electron)
-    } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      new Notification(title, { body: bodyText, icon: '/favicon.ico', silent: false });
+    // OS / browser notification (respects wc_notify setting)
+    if (localStorage.getItem('wc_notify') !== 'off') {
+      if (window.electronAPI) {
+        window.electronAPI.showNotification({ title, body: bodyText, convId, convType });
+      } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        new Notification(title, { body: bodyText, icon: '/favicon.ico', silent: false });
+      }
     }
   });
   socket.on('message_recalled',  ({ messageId }) => useStore.getState().recallMessage(messageId));
@@ -81,13 +82,15 @@ export function connectSocket(token) {
   socket.on('mention', data => {
     const title = `有人在群「${data.groupName}」中提到了你`;
     const body = `${data.senderName}：${data.message?.content || ''}`.slice(0, 200);
-    if (window.electronAPI) {
-      window.electronAPI.showNotification({
-        title, body,
-        convId: data.groupId, convType: 'group',
-      });
-    } else if (Notification.permission === 'granted') {
-      new Notification(title, { body, icon: '/favicon.ico' });
+    if (localStorage.getItem('wc_notify') !== 'off') {
+      if (window.electronAPI) {
+        window.electronAPI.showNotification({
+          title, body,
+          convId: data.groupId, convType: 'group',
+        });
+      } else if (Notification.permission === 'granted') {
+        new Notification(title, { body, icon: '/favicon.ico' });
+      }
     }
     useStore.getState().addMentionNotification?.(data);
   });

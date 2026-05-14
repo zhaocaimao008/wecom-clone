@@ -138,11 +138,11 @@ module.exports = (db, io, connectedUsers) => {
   router.get('/private/:userId', (req, res) => {
     const { userId } = req.params;
     const { before, limit = 50 } = req.query;
+    if (!/^\d+$/.test(userId)) return res.status(400).json({ error: '无效的用户ID' });
     const myId = req.user.id;
     const targetId = parseInt(userId);
     const beforeInt = before ? parseInt(before) : null;
     const limitInt = Math.min(parseInt(limit) || 50, 100);
-    if (!/^\d+$/.test(userId)) return res.status(400).json({ error: '无效的用户ID' });
 
     // 鉴权：请求者必须是当事人、好友或该对话参与方
     if (myId !== targetId) {
@@ -266,13 +266,15 @@ module.exports = (db, io, connectedUsers) => {
     const myId = req.user.id;
     const { convKey, isPinned, isMuted } = req.body;
     if (!convKey) return res.status(400).json({ error: 'convKey required' });
+    const pinnedVal = isPinned != null ? (isPinned ? 1 : 0) : null;
+    const mutedVal  = isMuted  != null ? (isMuted  ? 1 : 0) : null;
     db.prepare(`
       INSERT INTO conversation_settings (user_id, conv_key, is_pinned, is_muted)
       VALUES (?, ?, ?, ?)
       ON CONFLICT(user_id, conv_key) DO UPDATE SET
         is_pinned = COALESCE(excluded.is_pinned, is_pinned),
         is_muted  = COALESCE(excluded.is_muted,  is_muted)
-    `).run(myId, convKey, isPinned ?? null, isMuted ?? null);
+    `).run(myId, convKey, pinnedVal, mutedVal);
     res.json({ ok: true });
   });
 

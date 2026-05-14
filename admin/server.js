@@ -1,10 +1,12 @@
 'use strict';
 
-const path    = require('path');
-const crypto  = require('crypto');
-const express = require('/usr/local/wecom-clone/server/node_modules/express');
-const Database = require('/usr/local/wecom-clone/server/node_modules/better-sqlite3');
-const bcrypt = require('/usr/local/wecom-clone/server/node_modules/bcryptjs');
+const path      = require('path');
+const crypto    = require('crypto');
+const express   = require('/usr/local/wecom-clone/server/node_modules/express');
+const Database  = require('/usr/local/wecom-clone/server/node_modules/better-sqlite3');
+const bcrypt    = require('/usr/local/wecom-clone/server/node_modules/bcryptjs');
+const speakeasy = require('/usr/local/wecom-clone/server/node_modules/speakeasy');
+const QRCode    = require('/usr/local/wecom-clone/server/node_modules/qrcode');
 
 const app = express();
 const db  = new Database(path.join(__dirname, '../server/wecom.db'));
@@ -14,6 +16,10 @@ db.pragma('foreign_keys = ON');
 
 // ── Migrations ─────────────────────────────────────────────────
 try { db.exec('ALTER TABLE users ADD COLUMN disabled INTEGER DEFAULT 0'); } catch (_) {}
+try { db.exec('ALTER TABLE users ADD COLUMN totp_secret TEXT'); } catch (_) {}
+try { db.exec('ALTER TABLE users ADD COLUMN can_invite INTEGER DEFAULT 0'); } catch (_) {}
+
+db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS invite_codes (
@@ -47,85 +53,133 @@ db.exec(`
 
 app.use(express.json({ limit: '100kb' }));
 
-// ── Session store (TTL 7 days) ────────────────────────────────
-const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
-const sessions = new Map();
+// ── Client IP helper ────────────────────────────────────────────
+function getClientIp(req) {
+  return (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || req.ip || (req.connection && req.connection.remoteAddress) || '';
+}
+
+// ── IP Whitelist middleware ─────────────────────────────────────
+function ipWhitelistMiddleware(req, res, next) {
+  try {
+    const setting = db.prepare("SELECT value FROM settings WHERE key='admin_allowed_ips'").get();
+    const raw = (setting && setting.value || '').trim();
+    if (!raw) return next();
+    const clientIp = getClientIp(req);
+    const allowed = raw.split(',').map(s => s.trim()).filter(Boolean);
+    const normalizedClient = clientIp.replace(/^::ffff:/, '');
+    const ok = allowed.some(ip => normalizedClient === ip || clientIp === ip);
+    if (ok) return next();
+    return res.status(403).json({ error: '您的IP不在访问白名单中，请联系管理员', code: 'IP_FORBIDDEN' });
+  } catch (_) {
+    next();
+  }
+}
+app.use('/api', ipWhitelistMiddleware);
+
+// ── Session store ───────────────────────────────────────────────
+const SESSION_TTL       = 7 * 24 * 60 * 60 * 1000;
+const TOTP_PENDING_TTL  = 5 * 60 * 1000;
+const sessions          = new Map();
+const pendingTotp       = new Map(); // pendingToken → { username, expiresAt }
 
 function auth(req, res, next) {
-  const token = req.headers['x-token'];
-  if (!token || !sessions.has(token)) return res.status(401).json({ error: '请先登录', code: 'UNAUTHORIZED' });
-  const sess = sessions.get(token);
+  const tkn = req.headers['x-token'];
+  if (!tkn || !sessions.has(tkn))
+    return res.status(401).json({ error: '请先登录', code: 'UNAUTHORIZED' });
+  const sess = sessions.get(tkn);
   if (Date.now() - sess.at > SESSION_TTL) {
-    sessions.delete(token);
+    sessions.delete(tkn);
     return res.status(401).json({ error: '登录已过期，请重新登录', code: 'SESSION_EXPIRED' });
   }
-  // 附加用户信息到req用于审计日志
-  req.user = { username: sess.username };
-  req.clientIp = req.ip || req.connection.remoteAddress || null;
+  req.user     = { username: sess.username };
+  req.clientIp = getClientIp(req);
   next();
 }
 
-// ── Login rate limiting ────────────────────────────────────────
-const loginAttempts = new Map(); // ip → { count, until }
-const RATE_LIMIT = 5;
+// ── Login rate limiting ─────────────────────────────────────────
+const loginAttempts = new Map();
+const RATE_LIMIT  = 5;
 const RATE_WINDOW = 15 * 60 * 1000;
 
 function checkRateLimit(ip) {
-  const entry = loginAttempts.get(ip);
-  if (!entry) return true;
-  if (Date.now() > entry.until) { loginAttempts.delete(ip); return true; }
-  return entry.count < RATE_LIMIT;
+  const e = loginAttempts.get(ip);
+  if (!e) return true;
+  if (Date.now() > e.until) { loginAttempts.delete(ip); return true; }
+  return e.count < RATE_LIMIT;
 }
-
 function recordFailedAttempt(ip) {
-  const entry = loginAttempts.get(ip);
-  if (!entry || Date.now() > entry.until) {
-    loginAttempts.set(ip, { count: 1, until: Date.now() + RATE_WINDOW });
-  } else {
-    entry.count++;
-  }
+  const e = loginAttempts.get(ip);
+  if (!e || Date.now() > e.until) loginAttempts.set(ip, { count: 1, until: Date.now() + RATE_WINDOW });
+  else e.count++;
 }
 
-// ── Audit logging helper ────────────────────────────────────────────
-function auditLog(action, targetType, targetId, targetName, details = null) {
-  const ip = this?.req?.ip || this?.req?.connection?.remoteAddress || null;
-  // caller passes actorId/actorName via req.user set in auth middleware
-}
-
+// ── Audit helper ────────────────────────────────────────────────
 function createAudit(actorId, actorName, action, targetType, targetId, targetName, details, ip) {
   db.prepare(
-    'INSERT INTO audit_logs (actor_id, actor_name, action, target_type, target_id, target_name, details, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO audit_logs (actor_id,actor_name,action,target_type,target_id,target_name,details,ip_address) VALUES (?,?,?,?,?,?,?,?)'
   ).run(actorId, actorName, action, targetType, targetId, targetName, details, ip);
 }
 
-// ── Login / Logout ─────────────────────────────────────────────
+// ── Login ───────────────────────────────────────────────────────
 app.post('/api/login', (req, res) => {
-  const ip = req.ip || req.connection.remoteAddress || 'unknown';
-  if (!checkRateLimit(ip)) {
+  const ip = getClientIp(req);
+  if (!checkRateLimit(ip))
     return res.status(429).json({ error: '登录次数过多，请在 15 分钟后重试', code: 'RATE_LIMITED' });
-  }
+
   const { username, password } = req.body || {};
   if (!username || !password) {
     recordFailedAttempt(ip);
     return res.status(400).json({ error: '请输入用户名和密码', code: 'MISSING_CREDENTIALS' });
   }
-  // 查询数据库中的管理员账号
-  const user = db.prepare('SELECT id, username, password, disabled FROM users WHERE username=? AND role=?').get(username, 'admin');
-  if (!user) {
-    recordFailedAttempt(ip);
-    return res.status(401).json({ error: '用户名或密码错误', code: 'INVALID_CREDENTIALS' });
-  }
-  if (user.disabled) {
-    return res.status(403).json({ error: '账号已被禁用', code: 'ACCOUNT_DISABLED' });
-  }
+  const user = db.prepare('SELECT id,username,password,disabled,totp_secret FROM users WHERE username=? AND role=?').get(username, 'admin');
+  if (!user) { recordFailedAttempt(ip); return res.status(401).json({ error: '用户名或密码错误', code: 'INVALID_CREDENTIALS' }); }
+  if (user.disabled) return res.status(403).json({ error: '账号已被禁用', code: 'ACCOUNT_DISABLED' });
   if (!bcrypt.compareSync(password, user.password)) {
     recordFailedAttempt(ip);
     return res.status(401).json({ error: '用户名或密码错误', code: 'INVALID_CREDENTIALS' });
   }
   loginAttempts.delete(ip);
-  const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { username, at: Date.now() });
-  res.json({ token, expiresAt: Date.now() + SESSION_TTL });
+
+  if (user.totp_secret) {
+    const pendingToken = crypto.randomBytes(24).toString('hex');
+    pendingTotp.set(pendingToken, { username, expiresAt: Date.now() + TOTP_PENDING_TTL });
+    return res.json({ needTotp: true, pendingToken });
+  }
+
+  const tkn = crypto.randomBytes(32).toString('hex');
+  sessions.set(tkn, { username, at: Date.now() });
+  res.json({ token: tkn, expiresAt: Date.now() + SESSION_TTL });
+});
+
+app.post('/api/login/totp', (req, res) => {
+  const ip = getClientIp(req);
+  if (!checkRateLimit(ip))
+    return res.status(429).json({ error: '操作太频繁', code: 'RATE_LIMITED' });
+
+  const { pendingToken, totpCode } = req.body || {};
+  if (!pendingToken || !totpCode)
+    return res.status(400).json({ error: '参数缺失', code: 'MISSING_PARAMS' });
+
+  const pending = pendingTotp.get(pendingToken);
+  if (!pending || pending.expiresAt < Date.now()) {
+    pendingTotp.delete(pendingToken);
+    return res.status(401).json({ error: '验证超时，请重新登录', code: 'PENDING_EXPIRED' });
+  }
+  const user = db.prepare('SELECT totp_secret FROM users WHERE username=?').get(pending.username);
+  if (!user || !user.totp_secret)
+    return res.status(401).json({ error: '验证器未配置', code: 'TOTP_NOT_CONFIGURED' });
+
+  const valid = speakeasy.totp.verify({ secret: user.totp_secret, encoding: 'base32', token: totpCode, window: 1 });
+  if (!valid) {
+    recordFailedAttempt(ip);
+    return res.status(401).json({ error: '验证码错误', code: 'TOTP_INVALID' });
+  }
+  pendingTotp.delete(pendingToken);
+  loginAttempts.delete(ip);
+  const tkn = crypto.randomBytes(32).toString('hex');
+  sessions.set(tkn, { username: pending.username, at: Date.now() });
+  res.json({ token: tkn, expiresAt: Date.now() + SESSION_TTL });
 });
 
 app.post('/api/logout', auth, (req, res) => {
@@ -133,9 +187,51 @@ app.post('/api/logout', auth, (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Stats (Asia/Shanghai timezone for "today") ─────────────────
+// ── TOTP Management ─────────────────────────────────────────────
+app.get('/api/admin/totp-status', auth, (req, res) => {
+  const user = db.prepare('SELECT totp_secret FROM users WHERE username=?').get(req.user.username);
+  res.json({ enabled: !!(user && user.totp_secret) });
+});
+
+app.post('/api/admin/totp-setup', auth, async (req, res) => {
+  const secret = speakeasy.generateSecret({
+    name: encodeURIComponent(`企业密信后台(${req.user.username})`),
+    length: 20,
+  });
+  try {
+    const qrDataUrl = await QRCode.toDataURL(secret.otpauth_url);
+    res.json({ secret: secret.base32, qrDataUrl });
+  } catch {
+    res.status(500).json({ error: '生成二维码失败' });
+  }
+});
+
+app.post('/api/admin/totp-enable', auth, (req, res) => {
+  const { secret, code } = req.body || {};
+  if (!secret || !code) return res.status(400).json({ error: '参数缺失' });
+  const valid = speakeasy.totp.verify({ secret, encoding: 'base32', token: code, window: 1 });
+  if (!valid) return res.status(400).json({ error: '验证码错误，请确认手机时间准确' });
+  db.prepare('UPDATE users SET totp_secret=? WHERE username=?').run(secret, req.user.username);
+  createAudit(req.user.username, req.user.username, 'totp_enable', 'admin', null, req.user.username, null, req.clientIp);
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/totp-disable', auth, (req, res) => {
+  const { code } = req.body || {};
+  const user = db.prepare('SELECT totp_secret FROM users WHERE username=?').get(req.user.username);
+  if (user && user.totp_secret) {
+    if (!code) return res.status(400).json({ error: '请输入验证码以关闭' });
+    const valid = speakeasy.totp.verify({ secret: user.totp_secret, encoding: 'base32', token: code, window: 1 });
+    if (!valid) return res.status(400).json({ error: '验证码错误' });
+  }
+  db.prepare('UPDATE users SET totp_secret=NULL WHERE username=?').run(req.user.username);
+  createAudit(req.user.username, req.user.username, 'totp_disable', 'admin', null, req.user.username, null, req.clientIp);
+  res.json({ ok: true });
+});
+
+// ── Stats ───────────────────────────────────────────────────────
 app.get('/api/stats', auth, (_req, res) => {
-  const now = new Date();
+  const now  = new Date();
   const utc8 = new Date(now.getTime() + 8 * 3600 * 1000);
   const todayStart = new Date(utc8.getFullYear(), utc8.getMonth(), utc8.getDate())
     .toISOString().replace('T', ' ').slice(0, 19);
@@ -144,47 +240,42 @@ app.get('/api/stats', auth, (_req, res) => {
 
   const row = db.prepare(`
     SELECT
-      (SELECT count(*) FROM users)                                                                  AS users,
-      (SELECT count(*) FROM chat_groups)                                                             AS groups,
-      (SELECT count(*) FROM messages)                                                                AS messages,
-      (SELECT count(*) FROM users WHERE status='online')                                             AS online,
-      (SELECT count(*) FROM messages WHERE created_at >= ? AND created_at < ?)                       AS today_msgs,
-      (SELECT count(*) FROM users WHERE disabled=1)                                                  AS disabled_users,
-      (SELECT count(*) FROM invite_codes)                                                            AS invite_codes,
-      (SELECT count(*) FROM invite_codes WHERE used_at IS NOT NULL)                                  AS used_codes
+      (SELECT count(*) FROM users)                                              AS users,
+      (SELECT count(*) FROM chat_groups)                                        AS groups,
+      (SELECT count(*) FROM messages)                                           AS messages,
+      (SELECT count(*) FROM users WHERE status='online')                        AS online,
+      (SELECT count(*) FROM messages WHERE created_at>=? AND created_at<?)      AS today_msgs,
+      (SELECT count(*) FROM users WHERE disabled=1)                             AS disabled_users,
+      (SELECT count(*) FROM invite_codes)                                       AS invite_codes,
+      (SELECT count(*) FROM invite_codes WHERE used_at IS NOT NULL)             AS used_codes
   `).get(todayStart, todayEnd);
-
   res.json(row);
 });
 
-// ── Users ──────────────────────────────────────────────────────
+// ── Users ───────────────────────────────────────────────────────
 app.get('/api/users', auth, (_req, res) => {
   res.json(db.prepare(
-    'SELECT id,username,display_name,department,position,phone,email,status,disabled,created_at FROM users ORDER BY id'
+    'SELECT id,username,display_name,phone,email,status,disabled,can_invite,created_at FROM users ORDER BY id'
   ).all());
 });
 
 app.put('/api/users/:id/toggle', auth, (req, res) => {
-  const u = db.prepare('SELECT disabled, username FROM users WHERE id=?').get(req.params.id);
+  const u = db.prepare('SELECT disabled,username FROM users WHERE id=?').get(req.params.id);
   if (!u) return res.status(404).json({ error: '用户不存在' });
-  if (u.username === 'admin') {
-    return res.status(403).json({ error: '不能禁用管理员账号', code: 'CANNOT_DISABLE_ADMIN' });
-  }
+  if (u.username === 'admin') return res.status(403).json({ error: '不能禁用管理员账号', code: 'CANNOT_DISABLE_ADMIN' });
   const disabled = u.disabled ? 0 : 1;
   db.prepare('UPDATE users SET disabled=? WHERE id=?').run(disabled, req.params.id);
-  // 审计日志
-  createAudit(req.user.username, req.user.username, disabled ? 'user_disable' : 'user_enable',
-    'user', u.id, u.username, null, req.clientIp);
+  createAudit(req.user.username, req.user.username, disabled ? 'user_disable' : 'user_enable', 'user', u.id, u.username, null, req.clientIp);
   res.json({ disabled });
 });
 
 app.put('/api/users/:id', auth, (req, res) => {
-  const { display_name, department, position, phone, email } = req.body || {};
-  const u = db.prepare('SELECT id, username FROM users WHERE id=?').get(req.params.id);
+  const { display_name, phone, email } = req.body || {};
+  const u = db.prepare('SELECT id,username FROM users WHERE id=?').get(req.params.id);
   if (!u) return res.status(404).json({ error: '用户不存在' });
   db.prepare(
-    'UPDATE users SET display_name=COALESCE(?,display_name), department=COALESCE(?,department), position=COALESCE(?,position), phone=COALESCE(?,phone), email=COALESCE(?,email) WHERE id=?'
-  ).run(display_name||null, department||null, position||null, phone||null, email||null, req.params.id);
+    'UPDATE users SET display_name=COALESCE(?,display_name), phone=COALESCE(?,phone), email=COALESCE(?,email) WHERE id=?'
+  ).run(display_name || null, phone || null, email || null, req.params.id);
   createAudit(req.user.username, req.user.username, 'user_edit', 'user', u.id, u.username, null, req.clientIp);
   res.json({ ok: true });
 });
@@ -192,18 +283,29 @@ app.put('/api/users/:id', auth, (req, res) => {
 app.post('/api/users/:id/reset-password', auth, (req, res) => {
   const { password } = req.body || {};
   if (!password || password.length < 6) return res.status(400).json({ error: '密码至少 6 位' });
-  const u = db.prepare('SELECT id, username FROM users WHERE id=?').get(req.params.id);
+  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password))
+    return res.status(400).json({ error: '密码须包含大小写字母和数字' });
+  const u = db.prepare('SELECT id,username FROM users WHERE id=?').get(req.params.id);
   if (!u) return res.status(404).json({ error: '用户不存在' });
-  const hash = bcrypt.hashSync(password, 10);
-  db.prepare('UPDATE users SET password=? WHERE id=?').run(hash, req.params.id);
+  db.prepare('UPDATE users SET password=? WHERE id=?').run(bcrypt.hashSync(password, 10), req.params.id);
   createAudit(req.user.username, req.user.username, 'user_reset_password', 'user', u.id, u.username, null, req.clientIp);
   res.json({ ok: true });
 });
 
-// ── Groups ─────────────────────────────────────────────────────
+app.put('/api/users/:id/can-invite', auth, (req, res) => {
+  const { enabled } = req.body;
+  const u = db.prepare('SELECT id,username FROM users WHERE id=?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: '用户不存在' });
+  const val = enabled ? 1 : 0;
+  db.prepare('UPDATE users SET can_invite=? WHERE id=?').run(val, req.params.id);
+  createAudit(req.user.username, req.user.username, val ? 'invite_grant' : 'invite_revoke', 'user', u.id, u.username, null, req.clientIp);
+  res.json({ can_invite: val });
+});
+
+// ── Groups ──────────────────────────────────────────────────────
 app.get('/api/groups', auth, (_req, res) => {
   res.json(db.prepare(`
-    SELECT g.id, g.name, g.announcement, g.created_at,
+    SELECT g.id,g.name,g.announcement,g.created_at,
            u.display_name owner_name,
            (SELECT count(*) FROM group_members WHERE group_id=g.id) members,
            (SELECT count(*) FROM messages      WHERE group_id=g.id) msg_count
@@ -213,7 +315,7 @@ app.get('/api/groups', auth, (_req, res) => {
 });
 
 app.delete('/api/groups/:id', auth, (req, res) => {
-  const g = db.prepare('SELECT id, name FROM chat_groups WHERE id=?').get(req.params.id);
+  const g = db.prepare('SELECT id,name FROM chat_groups WHERE id=?').get(req.params.id);
   if (!g) return res.status(404).json({ error: '群组不存在' });
   try {
     db.transaction(id => {
@@ -221,37 +323,34 @@ app.delete('/api/groups/:id', auth, (req, res) => {
       db.prepare('DELETE FROM messages      WHERE group_id=?').run(id);
       db.prepare('DELETE FROM chat_groups WHERE id=?').run(id);
     })(req.params.id);
-    // 审计日志
-    createAudit(req.user.username, req.user.username, 'group_delete',
-      'group', g.id, g.name, null, req.clientIp);
+    createAudit(req.user.username, req.user.username, 'group_delete', 'group', g.id, g.name, null, req.clientIp);
     res.json({ ok: true });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: '解散群组失败', code: 'TRANSACTION_ERROR' });
   }
 });
 
 app.get('/api/groups/:id/members', auth, (req, res) => {
-  const members = db.prepare(`
-    SELECT u.id, u.display_name, u.username, u.department, u.position, gm.role, gm.joined_at
+  res.json(db.prepare(`
+    SELECT u.id,u.display_name,u.username,gm.role,gm.joined_at
     FROM group_members gm JOIN users u ON gm.user_id=u.id
     WHERE gm.group_id=?
     ORDER BY CASE gm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.display_name
-  `).all(req.params.id);
-  res.json(members);
+  `).all(req.params.id));
 });
 
 app.delete('/api/groups/:id/members/:userId', auth, (req, res) => {
-  const g = db.prepare('SELECT name, owner_id FROM chat_groups WHERE id=?').get(req.params.id);
+  const g = db.prepare('SELECT name,owner_id FROM chat_groups WHERE id=?').get(req.params.id);
   if (!g) return res.status(404).json({ error: '群组不存在' });
   if (String(g.owner_id) === String(req.params.userId)) return res.status(400).json({ error: '不能移除群主' });
   const r = db.prepare('DELETE FROM group_members WHERE group_id=? AND user_id=?').run(req.params.id, req.params.userId);
   if (!r.changes) return res.status(404).json({ error: '成员不存在' });
   const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.params.userId);
-  createAudit(req.user.username, req.user.username, 'group_kick', 'group', req.params.id, g.name, `kicked_user=${u?.username}`, req.clientIp);
+  createAudit(req.user.username, req.user.username, 'group_kick', 'group', req.params.id, g.name, `kicked_user=${u && u.username}`, req.clientIp);
   res.json({ ok: true });
 });
 
-// ── Messages ───────────────────────────────────────────────────
+// ── Messages ─────────────────────────────────────────────────────
 app.get('/api/messages', auth, (req, res) => {
   const search   = req.query.search   || '';
   const msgType  = req.query.msg_type || '';
@@ -262,13 +361,13 @@ app.get('/api/messages', auth, (req, res) => {
 
   const conditions = ['m.content LIKE ?'];
   const params     = [like];
-  if (msgType)  { conditions.push('m.msg_type = ?');                       params.push(msgType); }
-  if (chatType === 'group')   { conditions.push('m.group_id IS NOT NULL'); }
-  if (chatType === 'private') { conditions.push('m.group_id IS NULL');     }
+  if (msgType)              { conditions.push('m.msg_type = ?');          params.push(msgType); }
+  if (chatType === 'group') { conditions.push('m.group_id IS NOT NULL'); }
+  if (chatType === 'private'){ conditions.push('m.group_id IS NULL');    }
   const where = conditions.join(' AND ');
 
   const rows = db.prepare(`
-    SELECT m.id, m.content, m.msg_type, m.recalled, m.created_at,
+    SELECT m.id,m.content,m.msg_type,m.recalled,m.created_at,
            s.display_name sender,
            CASE WHEN m.group_id IS NOT NULL THEN g.name ELSE r.display_name END target,
            CASE WHEN m.group_id IS NOT NULL THEN '群聊' ELSE '私聊' END chat_type
@@ -276,9 +375,7 @@ app.get('/api/messages', auth, (req, res) => {
     LEFT JOIN users       s ON m.sender_id=s.id
     LEFT JOIN chat_groups g ON m.group_id=g.id
     LEFT JOIN users       r ON m.receiver_id=r.id
-    WHERE ${where}
-    ORDER BY m.created_at DESC
-    LIMIT ? OFFSET ?
+    WHERE ${where} ORDER BY m.created_at DESC LIMIT ? OFFSET ?
   `).all(...params, size, (page - 1) * size);
 
   const total = db.prepare(`SELECT count(*) c FROM messages m WHERE ${where}`).get(...params).c;
@@ -286,107 +383,94 @@ app.get('/api/messages', auth, (req, res) => {
 });
 
 app.put('/api/messages/:id/recall', auth, (req, res) => {
-  const m = db.prepare('SELECT recalled, sender_id FROM messages WHERE id=?').get(req.params.id);
+  const m = db.prepare('SELECT recalled,sender_id FROM messages WHERE id=?').get(req.params.id);
   if (!m)         return res.status(404).json({ error: '消息不存在' });
   if (m.recalled) return res.status(400).json({ error: '消息已撤回' });
   db.prepare("UPDATE messages SET recalled=1, content='[该消息已被管理员撤回]' WHERE id=?").run(req.params.id);
-  // 审计日志
-  createAudit(req.user.username, req.user.username, 'message_recall',
-    'message', parseInt(req.params.id), null, `sender_id=${m.sender_id}`, req.clientIp);
+  createAudit(req.user.username, req.user.username, 'message_recall', 'message', parseInt(req.params.id), null, `sender_id=${m.sender_id}`, req.clientIp);
   res.json({ ok: true });
 });
 
 app.delete('/api/messages/:id', auth, (req, res) => {
-  const m = db.prepare('SELECT id, sender_id FROM messages WHERE id=?').get(req.params.id);
+  const m = db.prepare('SELECT id,sender_id FROM messages WHERE id=?').get(req.params.id);
   if (!m) return res.status(404).json({ error: '消息不存在' });
   db.prepare('DELETE FROM messages WHERE id=?').run(req.params.id);
   createAudit(req.user.username, req.user.username, 'message_delete', 'message', m.id, null, `sender_id=${m.sender_id}`, req.clientIp);
   res.json({ ok: true });
 });
 
-// ── Invite Codes ───────────────────────────────────────────────
+// ── Invite Codes ─────────────────────────────────────────────────
 app.get('/api/invite-codes', auth, (_req, res) => {
-  const now = new Date().toISOString();
+  const now  = new Date().toISOString();
   const rows = db.prepare(`
-    SELECT ic.id, ic.code, ic.expires_at, ic.used_at, ic.used_by,
-           ic.created_by, ic.max_uses, ic.use_count, ic.created_at,
+    SELECT ic.id,ic.code,ic.expires_at,ic.used_at,ic.used_by,ic.created_by,ic.max_uses,ic.use_count,ic.created_at,
            u.display_name AS used_by_name
-    FROM invite_codes ic
-    LEFT JOIN users u ON CAST(ic.used_by AS INTEGER) = u.id
+    FROM invite_codes ic LEFT JOIN users u ON CAST(ic.used_by AS INTEGER)=u.id
     ORDER BY ic.rowid DESC
   `).all();
-
   res.json(rows.map(r => {
     let status, statusLabel;
-    if (r.use_count >= r.max_uses) {
-      status = 'used'; statusLabel = '已使用';
-    } else if (r.expires_at < now) {
-      status = 'expired'; statusLabel = '已过期';
-    } else {
-      status = 'unused'; statusLabel = '未使用';
-    }
+    if (r.use_count >= r.max_uses)  { status='used';    statusLabel='已使用'; }
+    else if (r.expires_at < now)    { status='expired'; statusLabel='已过期'; }
+    else                            { status='unused';  statusLabel='未使用'; }
     return { ...r, status, statusLabel };
   }));
 });
 
 app.post('/api/invite-codes', auth, (req, res) => {
-  const { days = 7, count = 1 } = req.body || {};
-  const daysN = Math.max(1, Math.min(365, parseInt(days) || 7));
+  const { days=7, count=1 } = req.body || {};
+  const daysN  = Math.max(1, Math.min(365, parseInt(days)  || 7));
   const countN = Math.max(1, Math.min(100, parseInt(count) || 1));
   const expiresAt = new Date(Date.now() + daysN * 86400000).toISOString();
   const results = [];
-
   for (let i = 0; i < countN; i++) {
-    const id = crypto.randomUUID();
-    const code = crypto.randomBytes(16).toString('base64url').slice(0, 20).toUpperCase();
-    db.prepare(
-      'INSERT INTO invite_codes (id, code, expires_at, created_by) VALUES (?, ?, ?, ?)'
-    ).run(id, code, expiresAt, 'admin');
+    const id   = crypto.randomUUID();
+    const code = String(crypto.randomInt(100000, 1000000));
+    db.prepare('INSERT INTO invite_codes (id,code,expires_at,created_by) VALUES (?,?,?,?)').run(id, code, expiresAt, 'admin');
     results.push({ id, code, expires_at: expiresAt });
   }
-  // 审计日志
-  createAudit(req.user.username, req.user.username, 'invite_code_create',
-    'invite_code', null, null, `count=${countN},days=${daysN}`, req.clientIp);
+  createAudit(req.user.username, req.user.username, 'invite_code_create', 'invite_code', null, null, `count=${countN},days=${daysN}`, req.clientIp);
   res.json({ ok: true, codes: results });
 });
 
 app.delete('/api/invite-codes/:id', auth, (req, res) => {
-  const r = db.prepare('SELECT id, code FROM invite_codes WHERE id=?').get(req.params.id);
+  const r = db.prepare('SELECT id,code FROM invite_codes WHERE id=?').get(req.params.id);
   if (!r) return res.status(404).json({ error: '邀请码不存在' });
   db.prepare('DELETE FROM invite_codes WHERE id=?').run(req.params.id);
-  // 审计日志
-  createAudit(req.user.username, req.user.username, 'invite_code_delete',
-    'invite_code', r.id, r.code, null, req.clientIp);
+  createAudit(req.user.username, req.user.username, 'invite_code_delete', 'invite_code', r.id, r.code, null, req.clientIp);
   res.json({ ok: true });
 });
 
-// ── Audit Logs ────────────────────────────────────────────────────
+// ── Audit Logs ───────────────────────────────────────────────────
 app.get('/api/audit-logs', auth, (req, res) => {
   const page   = Math.max(1, parseInt(req.query.page) || 1);
   const size   = Math.min(100, Math.max(1, parseInt(req.query.size) || 20));
   const action = req.query.action || '';
-
-  let whereClause = '';
-  let params = [];
-  if (action) {
-    whereClause = 'WHERE action = ?';
-    params.push(action);
-  }
-
-  const rows = db.prepare(`
-    SELECT * FROM audit_logs
-    ${whereClause}
-    ORDER BY created_at DESC
-    LIMIT ? OFFSET ?
-  `).all(...params, size, (page - 1) * size);
-
-  const total = db.prepare(`SELECT count(*) c FROM audit_logs ${whereClause}`).get(...params).c;
+  const where  = action ? 'WHERE action = ?' : '';
+  const params = action ? [action] : [];
+  const rows  = db.prepare(`SELECT * FROM audit_logs ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+    .all(...params, size, (page - 1) * size);
+  const total = db.prepare(`SELECT count(*) c FROM audit_logs ${where}`).get(...params).c;
   res.json({ rows, total, page, size });
 });
 
-// ── Static files ────────────────────────────────────────────────
-app.get("/", (_, res) => res.redirect("/index.html"));
+// ── System Settings ──────────────────────────────────────────────
+app.get('/api/settings', auth, (req, res) => {
+  try {
+    const rows = db.prepare('SELECT key,value FROM settings').all();
+    res.json(Object.fromEntries(rows.map(r => [r.key, r.value])));
+  } catch { res.json({}); }
+});
+
+app.put('/api/settings/ip-whitelist', auth, (req, res) => {
+  const ips = ((req.body && req.body.ips) || '').trim();
+  db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('admin_allowed_ips',?)").run(ips);
+  createAudit(req.user.username, req.user.username, 'settings_change', 'settings', null, 'admin_allowed_ips', `ips=${ips}`, req.clientIp);
+  res.json({ ok: true });
+});
+
+// ── Static files ─────────────────────────────────────────────────
+app.get('/', (_, res) => res.redirect('/index.html'));
 app.use(express.static(__dirname));
 
-// ── Start ───────────────────────────────────────────────────────
 app.listen(3002, '0.0.0.0', () => console.log('Admin panel → http://0.0.0.0:3002'));

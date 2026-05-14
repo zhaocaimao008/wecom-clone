@@ -126,6 +126,30 @@ const msgRateLimit = new Map();   // userId → { count, windowStart }
 const MSG_RATE_WINDOW = 60 * 1000;  // 1 minute
 const MSG_RATE_MAX    = 60;         // 60 messages per window
 
+// Lightweight generic rate limiter for socket mutation events (recall/delete/edit)
+const mutationRateLimit = new Map();
+const MUTATION_RATE_WINDOW = 60 * 1000;
+const MUTATION_RATE_MAX    = 30;
+
+function checkMutationRate(uid) {
+  const now = Date.now();
+  const entry = mutationRateLimit.get(uid);
+  if (!entry || now - entry.windowStart > MUTATION_RATE_WINDOW) {
+    mutationRateLimit.set(uid, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= MUTATION_RATE_MAX) return false;
+  entry.count++;
+  return true;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [uid, entry] of mutationRateLimit) {
+    if (now - entry.windowStart > MUTATION_RATE_WINDOW) mutationRateLimit.delete(uid);
+  }
+}, MUTATION_RATE_WINDOW * 2).unref();
+
 function checkMsgRate(uid) {
   const now = Date.now();
   const entry = msgRateLimit.get(uid);
@@ -137,6 +161,14 @@ function checkMsgRate(uid) {
   entry.count++;
   return true;
 }
+
+// Periodically evict expired rate-limit entries to prevent unbounded Map growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [uid, entry] of msgRateLimit) {
+    if (now - entry.windowStart > MSG_RATE_WINDOW) msgRateLimit.delete(uid);
+  }
+}, MSG_RATE_WINDOW * 2).unref();
 
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
@@ -164,31 +196,11 @@ io.on('connection', (socket) => {
 
   // ── Send message ──────────────────────────────────────────────────
   socket.on('send_message', ({ receiverId, groupId, content, msgType = 'text', durationMs = 0, replyToId = null, clientMsgId = null }) => {
+    try {
     if (!content) return;
     if (msgType !== 'voice' && msgType !== 'card' && !content.trim()) return;
     if (msgType === 'text' && content.length > 10000) return;
 
-    // ── Idempotency: 防止重复发送 ──────────────────────────────────────
-    if (clientMsgId) {
-      const existing = db.prepare('SELECT id FROM messages WHERE sender_id=? AND client_msg_id=?').get(uid, clientMsgId);
-      if (existing) {
-        // 消息已存在，查询完整消息并转发给接收方（确保对方收到）
-        const existingMsg = db.prepare(
-          'SELECT m.*, u.display_name as sender_name, u.avatar_color as sender_color FROM messages m JOIN users u ON m.sender_id=u.id WHERE m.id=?'
-        ).get(existing.id);
-        if (existingMsg) {
-          const formatted = formatMessage(existingMsg);
-          if (receiverId) {
-            emit(receiverId, 'new_message', formatted);
-          } else if (groupId) {
-            const members = db.prepare('SELECT user_id FROM group_members WHERE group_id=?').all(groupId);
-            members.forEach(m => emit(m.user_id, 'new_message', formatted));
-          }
-        }
-        // 返回服务器分配的ID给客户端，让客户端更新本地消息状态
-        return socket.emit('message_confirmed', { clientMsgId, serverId: existing.id });
-      }
-    }
     // ─────────────────────────────────────────────────────────────────
 
     if (!checkMsgRate(uid)) {
@@ -236,9 +248,19 @@ io.on('connection', (socket) => {
       storedContent = content.trim();
     }
 
-    const result = db.prepare(
-      'INSERT INTO messages (sender_id, receiver_id, group_id, content, msg_type, reply_to, client_msg_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(uid, receiverId || null, groupId || null, storedContent, msgType, replyToId, clientMsgId || null);
+    let result;
+    try {
+      result = db.prepare(
+        'INSERT INTO messages (sender_id, receiver_id, group_id, content, msg_type, reply_to, client_msg_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(uid, receiverId || null, groupId || null, storedContent, msgType, replyToId, clientMsgId || null);
+    } catch (insertErr) {
+      // UNIQUE constraint on (sender_id, client_msg_id) — duplicate submission
+      if (clientMsgId && insertErr.message?.includes('UNIQUE')) {
+        const dup = db.prepare('SELECT id FROM messages WHERE sender_id=? AND client_msg_id=?').get(uid, clientMsgId);
+        if (dup) return socket.emit('message_confirmed', { clientMsgId, serverId: dup.id });
+      }
+      throw insertErr;
+    }
 
     const sender = db.prepare('SELECT display_name, avatar_color FROM users WHERE id = ?').get(uid);
 
@@ -282,7 +304,7 @@ io.on('connection', (socket) => {
         const nameToId = {};
         memberUsers.forEach(u => { nameToId[u.display_name.toLowerCase()] = u.id; });
 
-        mentionMatches.forEach(async ([, username]) => {
+        mentionMatches.forEach(([, username]) => {
           const mentionedId = nameToId[username.toLowerCase()];
           if (mentionedId && Number(mentionedId) !== uid) {
             // Emit a dedicated mention event to the mentioned user (skip sender)
@@ -298,10 +320,15 @@ io.on('connection', (socket) => {
       }
       // ──────────────────────────────────────────────────────────────────
     }
+    } catch (err) {
+      console.error('send_message error:', err);
+      socket.emit('send_error', { message: '服务器错误，消息发送失败' });
+    }
   });
 
   // ── Recall message ────────────────────────────────────────────────
   socket.on('recall_message', ({ messageId }) => {
+    if (!checkMutationRate(uid)) return socket.emit('error', { message: '操作太频繁，请稍后再试' });
     const msg = db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId);
     if (!msg) return socket.emit('error', { message: '消息不存在' });
     // Group owner/admin can recall any member's message without time limit
@@ -330,6 +357,7 @@ io.on('connection', (socket) => {
 
   // ── Delete message for all (bidirectional, no time limit) ─────────
   socket.on('delete_message', ({ messageId }) => {
+    if (!checkMutationRate(uid)) return socket.emit('error', { message: '操作太频繁，请稍后再试' });
     const msg = db.prepare('SELECT * FROM messages WHERE id = ? AND sender_id = ?').get(messageId, uid);
     if (!msg) return socket.emit('error', { message: '消息不存在或无权删除' });
 
@@ -346,6 +374,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('edit_message', ({ messageId, content }) => {
+    if (!checkMutationRate(uid)) return socket.emit('error', { message: '操作太频繁，请稍后再试' });
     const msg = db.prepare('SELECT * FROM messages WHERE id = ? AND sender_id = ?').get(messageId, uid);
     if (!msg) return socket.emit('error', { message: '消息不存在或无权编辑' });
     if (msg.msg_type !== 'text') return socket.emit('error', { message: '只能编辑文字消息' });
@@ -433,15 +462,19 @@ io.on('connection', (socket) => {
   // ─────────────────────────────────────────────────────────────────
 
   socket.on('disconnect', () => {
-    connectedAt.delete(socket.id);
-    const sockets = connectedUsers.get(uid);
-    if (sockets) {
-      sockets.delete(socket.id);
-      if (sockets.size === 0) {
-        connectedUsers.delete(uid);
-        db.prepare('UPDATE users SET status = ? WHERE id = ?').run('offline', uid);
-        io.emit('user_status', { userId: uid, status: 'offline' });
+    try {
+      connectedAt.delete(socket.id);
+      const sockets = connectedUsers.get(uid);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size === 0) {
+          connectedUsers.delete(uid);
+          db.prepare('UPDATE users SET status = ? WHERE id = ?').run('offline', uid);
+          io.emit('user_status', { userId: uid, status: 'offline' });
+        }
       }
+    } catch (err) {
+      console.error('disconnect handler error:', err);
     }
   });
 });
@@ -462,4 +495,4 @@ app.get('*', (req, res) => {
   res.sendFile(require('path').join(clientDist, 'index.html'));
 });
 
-server.listen(PORT, '0.0.0.0', () => console.log(`✅ WeCom Server running on http://0.0.0.0:${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`✅ 企业密信 Server running on http://0.0.0.0:${PORT}`));

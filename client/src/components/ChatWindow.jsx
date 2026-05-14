@@ -59,7 +59,7 @@ export default function ChatWindow() {
         socket.emit('mark_read', { messageId: msg.id });
       }
     });
-  }, [messages]);
+  }, [messages, socket, currentUser]);
 
   useEffect(() => {
     const vv = window.visualViewport;
@@ -251,8 +251,7 @@ export default function ChatWindow() {
   function sendCard(user) {
     if (!socket || !activeConv) return;
     const cardJson = JSON.stringify({
-      userId: user.id, name: user.display_name,
-      department: user.department, position: user.position, color: user.avatar_color,
+      userId: user.id, name: user.display_name, color: user.avatar_color,
     });
     const payload = activeConv.type === 'private'
       ? { receiverId: activeConv.id, content: cardJson, msgType: 'card' }
@@ -358,7 +357,7 @@ export default function ChatWindow() {
 
       {sendError && <div className="send-error-toast">{sendError}</div>}
 
-      {/* ── WeChat-style Input ── */}
+      {/* ── Input area ── */}
       <div className={`wx-input-wrap ${isMuted ? 'input-muted' : ''}`} onClick={e => e.stopPropagation()}>
         {isMuted && (
           <div className="mute-banner">
@@ -395,7 +394,6 @@ export default function ChatWindow() {
                 <div key={m.id} className="mention-picker-item" onClick={() => insertMention(m)}>
                   <AvatarCircle name={m.display_name} color={m.avatar_color} size={28} radius={14} />
                   <span>{m.display_name}</span>
-                  <span className="mention-picker-dept">{m.department}</span>
                 </div>
               ))}
             </div>
@@ -539,7 +537,7 @@ export default function ChatWindow() {
 function CardPickerModal({ contacts, onClose, onSelect }) {
   const [search, setSearch] = useState('');
   const filtered = contacts.filter(c =>
-    !search || c.display_name?.includes(search) || c.department?.includes(search)
+    !search || c.display_name?.includes(search)
   );
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -559,7 +557,7 @@ function CardPickerModal({ contacts, onClose, onSelect }) {
                 <AvatarCircle name={u.display_name} color={u.avatar_color} size={42} radius={21} />
                 <div className="add-result-info">
                   <span className="add-result-name">{u.display_name}</span>
-                  <span className="add-result-sub">{u.department} · {u.position}</span>
+                  <span className="add-result-sub">{u.username}</span>
                 </div>
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="#ccc">
                   <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
@@ -586,11 +584,12 @@ function useAuthUrl(url) {
     let objectUrl = null;
     let cancelled = false;
     fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? r.blob() : Promise.reject())
+      .then(r => r.ok ? r.blob() : Promise.reject(new Error(r.status)))
       .then(blob => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setSrc(objectUrl);
+        const u = URL.createObjectURL(blob);
+        if (cancelled) { URL.revokeObjectURL(u); return; }
+        objectUrl = u;
+        setSrc(u);
       })
       .catch(() => {});
     return () => {
@@ -758,7 +757,6 @@ function MessageBubble({ msg, isMine, showAvatar, onRecall, onDelete, onReply, o
                   <AvatarCircle name={cardData.name} color={cardData.color} size={44} radius={8} />
                   <div className="card-bubble-info">
                     <span className="card-bubble-name">{cardData.name}</span>
-                    <span className="card-bubble-dept">{cardData.department} · {cardData.position}</span>
                   </div>
                 </div>
                 <div className="card-bubble-footer">个人名片</div>

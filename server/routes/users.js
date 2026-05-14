@@ -36,9 +36,9 @@ module.exports = (db, io, connectedUsers) => {
     const { q = '' } = req.query;
     if (!q.trim()) return res.json([]);
     const myId = req.user.id;
-    const kw = `%${q.trim().replace(/%/g, '\\%')}%`;
+    const kw = `%${q.trim().replace(/[%_]/g, c => `\\${c}`)}%`;
     const users = db.prepare(`
-      SELECT u.id, u.display_name, u.username, u.avatar_color, u.avatar_url, u.department, u.position, u.status, u.user_code,
+      SELECT u.id, u.display_name, u.username, u.avatar_color, u.avatar_url, u.status, u.user_code,
              CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END as is_contact,
              CASE WHEN fr.id IS NOT NULL AND fr.status='pending' THEN 1 ELSE 0 END as request_sent
       FROM users u
@@ -50,12 +50,11 @@ module.exports = (db, io, connectedUsers) => {
     res.json(users);
   });
 
-  // Find user by exact 6-digit user_code (for QR scan)
   router.get('/by-code/:code', (req, res) => {
     const myId = req.user.id;
     const { code } = req.params;
     const u = db.prepare(`
-      SELECT u.id, u.display_name, u.username, u.avatar_color, u.avatar_url, u.department, u.position, u.status, u.user_code,
+      SELECT u.id, u.display_name, u.username, u.avatar_color, u.avatar_url, u.status, u.user_code,
              CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END as is_contact,
              CASE WHEN fr.id IS NOT NULL AND fr.status='pending' THEN 1 ELSE 0 END as request_sent
       FROM users u
@@ -69,9 +68,9 @@ module.exports = (db, io, connectedUsers) => {
 
   router.get('/contacts', (req, res) => {
     const contacts = db.prepare(`
-      SELECT u.id, u.display_name, u.avatar_color, u.department, u.position, u.phone, u.email, u.status
+      SELECT u.id, u.display_name, u.avatar_color, u.avatar_url, u.phone, u.email, u.status, u.user_code
       FROM contacts c JOIN users u ON c.contact_id = u.id
-      WHERE c.user_id = ? ORDER BY u.department, u.display_name
+      WHERE c.user_id = ? ORDER BY u.display_name
     `).all(req.user.id);
     res.json(contacts);
   });
@@ -106,7 +105,7 @@ module.exports = (db, io, connectedUsers) => {
         return res.status(500).json({ error: '发送失败，请重试' });
       }
     }
-    const sender = db.prepare('SELECT id,display_name,avatar_color,department,position,status FROM users WHERE id=?').get(myId);
+    const sender = db.prepare('SELECT id,display_name,avatar_color,status FROM users WHERE id=?').get(myId);
     emitTo(targetId, 'friend_request', { ...sender, message, requestId: myId });
     res.json({ ok: true });
   });
@@ -114,7 +113,7 @@ module.exports = (db, io, connectedUsers) => {
   router.get('/friend-requests', (req, res) => {
     const reqs = db.prepare(`
       SELECT fr.id, fr.message, fr.created_at,
-             u.id as from_id, u.display_name, u.avatar_color, u.department, u.position, u.status
+             u.id as from_id, u.display_name, u.avatar_color, u.status
       FROM friend_requests fr JOIN users u ON fr.from_id = u.id
       WHERE fr.to_id = ? AND fr.status = 'pending'
       ORDER BY fr.created_at DESC
@@ -139,7 +138,7 @@ module.exports = (db, io, connectedUsers) => {
       db.prepare('UPDATE friend_requests SET status=? WHERE from_id=? AND to_id=?').run('accepted', fromId, myId);
       db.prepare('INSERT OR IGNORE INTO contacts (user_id,contact_id) VALUES (?,?)').run(myId, fromId);
       db.prepare('INSERT OR IGNORE INTO contacts (user_id,contact_id) VALUES (?,?)').run(fromId, myId);
-      const me = db.prepare('SELECT id,display_name,avatar_color,department,position,status FROM users WHERE id=?').get(myId);
+      const me = db.prepare('SELECT id,display_name,avatar_color,status FROM users WHERE id=?').get(myId);
       emitTo(fromId, 'friend_accepted', me);
       res.json({ ok: true, action: 'accepted' });
     } else {
@@ -149,7 +148,6 @@ module.exports = (db, io, connectedUsers) => {
     }
   });
 
-  // ── Delete friend ───────────────────────────────────────────────────────────
   router.delete('/friends/:userId', (req, res) => {
     const myId = req.user.id;
     const otherId = parseInt(req.params.userId);
@@ -159,11 +157,10 @@ module.exports = (db, io, connectedUsers) => {
     res.json({ ok: true });
   });
 
+  // Returns all users grouped under one key (departments removed)
   router.get('/departments', (req, res) => {
-    const users = db.prepare('SELECT id,display_name,avatar_color,department,position,phone,email,status,user_code FROM users ORDER BY department,display_name LIMIT 500').all();
-    const depts = {};
-    users.forEach(u => { if (!depts[u.department]) depts[u.department] = []; depts[u.department].push(u); });
-    res.json(depts);
+    const users = db.prepare('SELECT id,display_name,avatar_color,avatar_url,phone,email,status,user_code FROM users ORDER BY display_name LIMIT 500').all();
+    res.json({ '全部成员': users });
   });
 
   router.get('/me/groups', (req, res) => {
@@ -185,7 +182,7 @@ module.exports = (db, io, connectedUsers) => {
     const myMembership = db.prepare('SELECT role FROM group_members WHERE group_id=? AND user_id=?').get(gid, req.user.id);
     if (!myMembership) return res.status(403).json({ error: '不在该群组中' });
     const members = db.prepare(`
-      SELECT u.id,u.display_name,u.avatar_color,u.department,u.position,u.status,gm.role
+      SELECT u.id,u.display_name,u.avatar_color,u.avatar_url,u.status,gm.role
       FROM group_members gm JOIN users u ON gm.user_id=u.id WHERE gm.group_id=?
     `).all(gid);
     res.json(members);
@@ -194,7 +191,7 @@ module.exports = (db, io, connectedUsers) => {
   router.get('/:id', (req, res) => {
     const uid = parseInt(req.params.id);
     if (isNaN(uid) || uid <= 0) return res.status(400).json({ error: '无效的用户ID' });
-    const user = db.prepare('SELECT id,display_name,avatar_color,department,position,phone,email,status FROM users WHERE id=?').get(uid);
+    const user = db.prepare('SELECT id,display_name,avatar_color,avatar_url,phone,email,status,user_code FROM users WHERE id=?').get(uid);
     if (!user) return res.status(404).json({ error: '用户不存在' });
     res.json(user);
   });
@@ -212,15 +209,11 @@ module.exports = (db, io, connectedUsers) => {
   });
 
   router.put('/me', (req, res) => {
-    const { display_name, department, position, phone, email, avatar_color, privacy } = req.body;
+    const { display_name, phone, email, avatar_color, privacy } = req.body;
     if (display_name !== undefined && !display_name.trim())
       return res.status(400).json({ error: '昵称不能为空' });
     if (display_name && display_name.trim().length > 50)
       return res.status(400).json({ error: '昵称不能超过50字' });
-    if (department !== undefined && typeof department === 'string' && department.length > 50)
-      return res.status(400).json({ error: '部门不能超过50字' });
-    if (position !== undefined && typeof position === 'string' && position.length > 50)
-      return res.status(400).json({ error: '职位不能超过50字' });
     if (phone && !/^1\d{10}$/.test(phone))
       return res.status(400).json({ error: '手机号格式不正确' });
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
@@ -230,14 +223,6 @@ module.exports = (db, io, connectedUsers) => {
     const updates = [];
     const vals = [];
     if (display_name !== undefined) { updates.push('display_name=?'); vals.push(display_name.trim()); }
-    if (department !== undefined) {
-      if (typeof department !== 'string') return res.status(400).json({ error: '部门必须为字符串' });
-      updates.push('department=?'); vals.push(department);
-    }
-    if (position !== undefined) {
-      if (typeof position !== 'string') return res.status(400).json({ error: '职位必须为字符串' });
-      updates.push('position=?'); vals.push(position);
-    }
     if (phone !== undefined) { updates.push('phone=?'); vals.push(phone || null); }
     if (email !== undefined) { updates.push('email=?'); vals.push(email || null); }
     if (avatar_color !== undefined) { updates.push('avatar_color=?'); vals.push(avatar_color); }
@@ -247,7 +232,7 @@ module.exports = (db, io, connectedUsers) => {
     if (updates.length === 0) return res.status(400).json({ error: '没有要更新的字段' });
     vals.push(req.user.id);
     db.prepare(`UPDATE users SET ${updates.join(',')} WHERE id=?`).run(...vals);
-    const user = db.prepare('SELECT id,username,display_name,avatar_color,avatar_url,user_code,department,position,phone,email,status,privacy FROM users WHERE id=?').get(req.user.id);
+    const user = db.prepare('SELECT id,username,display_name,avatar_color,avatar_url,user_code,phone,email,status,privacy FROM users WHERE id=?').get(req.user.id);
     res.json(user);
   });
 
@@ -257,7 +242,7 @@ module.exports = (db, io, connectedUsers) => {
       if (!req.file) return res.status(400).json({ error: '未收到图片' });
       const avatarUrl = `/uploads/avatars/${req.file.filename}`;
       db.prepare('UPDATE users SET avatar_url=? WHERE id=?').run(avatarUrl, req.user.id);
-      const user = db.prepare('SELECT id,username,display_name,avatar_color,avatar_url,user_code,department,position,phone,email,status,privacy FROM users WHERE id=?').get(req.user.id);
+      const user = db.prepare('SELECT id,username,display_name,avatar_color,avatar_url,user_code,phone,email,status,privacy FROM users WHERE id=?').get(req.user.id);
       res.json(user);
     });
   });
@@ -273,6 +258,28 @@ module.exports = (db, io, connectedUsers) => {
       WHERE cg.restrict_private_chat=1 AND gm1.role='member' AND gm2.role='member' LIMIT 1
     `).get(myId, targetId);
     res.json({ allowed: !restricted, reason: restricted ? `「${restricted.name}」群已禁止成员私聊` : null });
+  });
+
+  // ── Invite code generation (user-facing) ──────────────────────────────────
+  router.get('/invite-code/can-generate', (req, res) => {
+    const user = db.prepare('SELECT can_invite FROM users WHERE id=?').get(req.user.id);
+    res.json({ allowed: !!(user && user.can_invite) });
+  });
+
+  router.post('/invite-code/generate', (req, res) => {
+    const user = db.prepare('SELECT can_invite FROM users WHERE id=?').get(req.user.id);
+    if (!user || !user.can_invite)
+      return res.status(403).json({ error: '您没有生成邀请码的权限' });
+    const days = Math.max(1, Math.min(90, parseInt(req.body?.days) || 7));
+    const code = String(crypto.randomInt(100000, 1000000));
+    const expiresAt = new Date(Date.now() + days * 86400000).toISOString();
+    const id = crypto.randomUUID();
+    try {
+      db.prepare('INSERT INTO invite_codes (id, code, expires_at, created_by) VALUES (?, ?, ?, ?)').run(id, code, expiresAt, String(req.user.id));
+    } catch {
+      return res.status(500).json({ error: '生成失败，请重试' });
+    }
+    res.json({ code, expires_at: expiresAt, days });
   });
 
   return router;

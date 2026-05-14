@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>企业微信 · 管理后台</title>
+<title>企业密信 · 管理后台</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -209,6 +209,12 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle}
 /* Section visibility */
 .section{display:none}
 .section.active{display:block}
+.toggle-switch{position:relative;display:inline-block;width:46px;height:26px}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#ccc;border-radius:26px;transition:.3s}
+.toggle-slider:before{position:absolute;content:'';height:20px;width:20px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s}
+.toggle-switch input:checked+.toggle-slider{background:var(--green)}
+.toggle-switch input:checked+.toggle-slider:before{transform:translateX(20px)}
 
 /* ─── RESPONSIVE ─────────────────────────────────────────────── */
 @media(max-width:768px){
@@ -262,19 +268,39 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle}
   <div class="login-card">
     <div class="login-logo">
       <svg viewBox="0 0 24 24" style="width:48px;height:48px;fill:#07c160;margin-bottom:10px"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
-      <h1>企业微信管理后台</h1>
-      <p>WeCom Admin Console</p>
+      <h1>企业密信管理后台</h1>
+      <p>企业密信 Admin Console</p>
     </div>
     <div class="login-err" id="login-err"></div>
-    <div class="form-group">
-      <label>管理员账号</label>
-      <input type="text" id="inp-user" placeholder="请输入账号" value="admin" autocomplete="username">
+    <!-- Step 1: 账号密码 -->
+    <div id="login-step1">
+      <div class="form-group">
+        <label>管理员账号</label>
+        <input type="text" id="inp-user" placeholder="请输入账号" value="admin" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label>登录密码</label>
+        <input type="password" id="inp-pass" placeholder="请输入密码" value="Admin2024" autocomplete="current-password">
+      </div>
+      <button class="btn-login" id="btn-login-submit" onclick="doLogin()">登 录</button>
     </div>
-    <div class="form-group">
-      <label>登录密码</label>
-      <input type="password" id="inp-pass" placeholder="请输入密码" value="admin123" autocomplete="current-password">
+    <!-- Step 2: 谷歌验证码 -->
+    <div id="login-step2" style="display:none">
+      <div style="text-align:center;margin-bottom:16px">
+        <svg viewBox="0 0 24 24" width="36" height="36" fill="#07c160"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z"/></svg>
+        <div style="font-size:14px;font-weight:600;margin-top:8px">双因素认证验证</div>
+        <div style="font-size:12px;color:#888;margin-top:4px">请打开 Google Authenticator 输入 6 位验证码</div>
+      </div>
+      <div class="form-group">
+        <label>验证码</label>
+        <input type="text" id="inp-totp" placeholder="000000" maxlength="6" inputmode="numeric"
+          style="letter-spacing:6px;font-size:20px;font-family:monospace;text-align:center"
+          autocomplete="one-time-code"
+          onkeydown="if(event.key==='Enter') doTotpLogin()">
+      </div>
+      <button class="btn-login" id="btn-totp-submit" onclick="doTotpLogin()">验证登录</button>
+      <button style="width:100%;margin-top:8px;padding:8px;background:none;border:none;color:#888;cursor:pointer;font-size:13px" onclick="backToStep1()">← 返回重新登录</button>
     </div>
-    <button class="btn-login" id="btn-login-submit" onclick="doLogin()">登 录</button>
   </div>
 </div>
 
@@ -292,7 +318,7 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle}
           <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
         </div>
         <div>
-          <div class="brand-text">企业微信</div>
+          <div class="brand-text">企业密信</div>
           <div class="brand-sub">管理后台</div>
         </div>
       </div>
@@ -324,6 +350,11 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle}
       <div class="nav-item" data-nav="audit" onclick="nav('audit',this)">
         <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 15h8v2H8zm0-4h8v2H8zm0-4h5v2H8z"/></svg>
         <span>审计日志</span>
+      </div>
+      <div class="nav-section">系统</div>
+      <div class="nav-item" data-nav="settings" onclick="nav('settings',this)">
+        <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+        <span>系统设置</span>
       </div>
     </nav>
 
@@ -415,13 +446,13 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle}
             <div class="toolbar">
               <div class="search-box">
                 <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-                <input type="text" id="user-search" placeholder="搜索姓名/账号/部门..." oninput="filterUsers()">
+                <input type="text" id="user-search" placeholder="搜索姓名/账号..." oninput="filterUsers()">
               </div>
             </div>
             <div class="tbl-wrap">
               <table>
-                <thead><tr><th>ID</th><th>姓名</th><th>账号</th><th>部门</th><th>职位</th><th>手机</th><th>状态</th><th>注册时间</th><th>操作</th></tr></thead>
-                <tbody id="users-tbody"><tr><td colspan="9" style="text-align:center;padding:28px;color:#aaa">加载中...</td></tr></tbody>
+                <thead><tr><th>ID</th><th>姓名</th><th>账号</th><th>手机</th><th>状态</th><th>邀请权限</th><th>注册时间</th><th>操作</th></tr></thead>
+                <tbody id="users-tbody"><tr><td colspan="8" style="text-align:center;padding:28px;color:#aaa">加载中...</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -544,6 +575,72 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle}
         </div>
       </div>
 
+      <div class="section" id="sec-settings">
+        <!-- TOTP -->
+        <div class="card" style="margin-bottom:18px">
+          <div class="card-header"><span class="card-title">谷歌验证器（双因素认证）</span></div>
+          <div class="card-body" style="padding:20px">
+            <div id="totp-status-row" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+              <div>
+                <div style="font-size:14px;font-weight:600;color:var(--text)" id="totp-status-label">加载中...</div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:4px">启用后，登录需额外输入 Google Authenticator 验证码</div>
+              </div>
+              <div style="display:flex;gap:8px;flex-shrink:0;margin-left:24px">
+                <button class="btn btn-primary btn-sm" id="btn-totp-setup" onclick="startTotpSetup()" style="display:none">启用</button>
+                <button class="btn btn-danger btn-sm" id="btn-totp-disable" onclick="showTotpDisable()" style="display:none">关闭</button>
+              </div>
+            </div>
+            <!-- Setup flow -->
+            <div id="totp-setup-panel" style="display:none;background:#f8fafb;border-radius:8px;padding:16px">
+              <div style="font-size:13px;font-weight:600;margin-bottom:10px">第一步：用 Google Authenticator 扫描二维码</div>
+              <div style="text-align:center;margin-bottom:12px">
+                <img id="totp-qr-img" src="" alt="QR" style="width:160px;height:160px;border:1px solid #e5e7eb;border-radius:6px">
+              </div>
+              <div style="font-size:12px;color:#666;margin-bottom:4px">或手动输入密钥：</div>
+              <div id="totp-manual-key" style="font-family:monospace;font-size:13px;font-weight:600;color:var(--green);background:#fff;padding:6px 10px;border-radius:6px;border:1px solid #e5e7eb;word-break:break-all;margin-bottom:14px"></div>
+              <div style="font-size:13px;font-weight:600;margin-bottom:8px">第二步：输入 App 显示的 6 位验证码</div>
+              <div style="display:flex;gap:8px">
+                <input type="text" id="totp-verify-code" maxlength="6" inputmode="numeric" placeholder="000000"
+                  style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:6px;font-size:16px;letter-spacing:4px;font-family:monospace">
+                <button class="btn btn-primary" onclick="confirmTotpEnable()">验证并启用</button>
+                <button class="btn btn-gray" onclick="cancelTotpSetup()">取消</button>
+              </div>
+              <div id="totp-setup-err" style="display:none;color:var(--danger);font-size:12px;margin-top:8px"></div>
+            </div>
+            <!-- Disable flow -->
+            <div id="totp-disable-panel" style="display:none;background:#fff5f5;border-radius:8px;padding:16px">
+              <div style="font-size:13px;margin-bottom:10px">请输入当前验证码以关闭双因素认证：</div>
+              <div style="display:flex;gap:8px">
+                <input type="text" id="totp-disable-code" maxlength="6" inputmode="numeric" placeholder="000000"
+                  style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:6px;font-size:16px;letter-spacing:4px;font-family:monospace">
+                <button class="btn btn-danger" onclick="confirmTotpDisable()">确认关闭</button>
+                <button class="btn btn-gray" onclick="cancelTotpDisable()">取消</button>
+              </div>
+              <div id="totp-disable-err" style="display:none;color:var(--danger);font-size:12px;margin-top:8px"></div>
+            </div>
+          </div>
+        </div>
+        <!-- IP Whitelist -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">IP 登录白名单</span></div>
+          <div class="card-body" style="padding:20px">
+            <div style="font-size:13px;color:#555;margin-bottom:10px">
+              仅允许指定 IP 访问后台，多个 IP 用英文逗号分隔。<strong>留空则不限制。</strong><br>
+              <span style="color:var(--danger)">⚠ 设置前确认已将您的 IP 加入列表，否则将无法访问后台。</span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:flex-start">
+              <textarea id="ip-whitelist-input" rows="3" placeholder="例：1.2.3.4,5.6.7.8"
+                style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-family:monospace;resize:vertical"></textarea>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <button class="btn btn-primary btn-sm" onclick="saveIpWhitelist()">保存</button>
+                <button class="btn btn-gray btn-sm" onclick="loadSettings()">重置</button>
+              </div>
+            </div>
+            <div style="font-size:12px;color:#aaa;margin-top:8px" id="ip-current-tip"></div>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -593,11 +690,7 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle}
     <h3>编辑用户</h3>
     <div class="gen-form">
       <div class="gen-row">
-        <div class="gen-field"><label>姓名</label><input type="text" id="edit-name" placeholder="显示名称"></div>
-        <div class="gen-field"><label>部门</label><input type="text" id="edit-dept" placeholder="部门"></div>
-      </div>
-      <div class="gen-row">
-        <div class="gen-field"><label>职位</label><input type="text" id="edit-pos" placeholder="职位"></div>
+        <div class="gen-field"><label>昵称</label><input type="text" id="edit-name" placeholder="显示名称"></div>
         <div class="gen-field"><label>手机</label><input type="text" id="edit-phone" placeholder="手机号"></div>
       </div>
       <div class="gen-field"><label>邮箱</label><input type="email" id="edit-email" placeholder="邮箱"></div>
@@ -622,7 +715,7 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle}
     <div style="overflow-y:auto;flex:1;margin:12px -24px 0;padding:0 24px">
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>成员</th><th>账号</th><th>部门</th><th>角色</th><th>操作</th></tr></thead>
+          <thead><tr><th>成员</th><th>账号</th><th>角色</th><th>操作</th></tr></thead>
           <tbody id="members-tbody"></tbody>
         </table>
       </div>
@@ -732,6 +825,8 @@ function toggleSidebar(open) {
 }
 
 // ─── Auth ──────────────────────────────────────────────────────
+let _pendingToken = '';
+
 function doLogin() {
   const u = document.getElementById('inp-user').value.trim();
   const p = document.getElementById('inp-pass').value;
@@ -739,19 +834,58 @@ function doLogin() {
   const btn = document.getElementById('btn-login-submit');
   btn.disabled = true; btn.textContent = '登录中...';
   err.style.display = 'none';
-  api('POST', '/api/login', { username: u, password: p })
-    .then(r => {
-      if (r.token) {
-        token = r.token;
-        localStorage.setItem(TOKEN_KEY, token);
-        showApp();
-      } else {
-        err.textContent = r.error || '登录失败'; err.style.display = 'block';
-      }
-    })
-    .catch(() => { err.textContent = '网络错误，请重试'; err.style.display = 'block'; })
+  fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: u, password: p }),
+  }).then(r => r.json()).then(r => {
+    if (r.token) {
+      token = r.token;
+      localStorage.setItem(TOKEN_KEY, token);
+      showApp();
+    } else if (r.needTotp) {
+      _pendingToken = r.pendingToken;
+      document.getElementById('login-step1').style.display = 'none';
+      document.getElementById('login-step2').style.display = 'block';
+      document.getElementById('inp-totp').value = '';
+      document.getElementById('inp-totp').focus();
+    } else {
+      err.textContent = r.error || '登录失败'; err.style.display = 'block';
+    }
+  }).catch(() => { err.textContent = '网络错误，请重试'; err.style.display = 'block'; })
     .finally(() => { btn.disabled = false; btn.textContent = '登 录'; });
 }
+
+function doTotpLogin() {
+  const code = document.getElementById('inp-totp').value.trim();
+  const err  = document.getElementById('login-err');
+  const btn  = document.getElementById('btn-totp-submit');
+  if (!code) { err.textContent = '请输入验证码'; err.style.display = 'block'; return; }
+  btn.disabled = true; btn.textContent = '验证中...';
+  err.style.display = 'none';
+  fetch('/api/login/totp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pendingToken: _pendingToken, totpCode: code }),
+  }).then(r => r.json()).then(r => {
+    if (r.token) {
+      token = r.token;
+      localStorage.setItem(TOKEN_KEY, token);
+      showApp();
+    } else {
+      err.textContent = r.error || '验证失败'; err.style.display = 'block';
+    }
+  }).catch(() => { err.textContent = '网络错误，请重试'; err.style.display = 'block'; })
+    .finally(() => { btn.disabled = false; btn.textContent = '验证登录'; });
+}
+
+function backToStep1() {
+  _pendingToken = '';
+  document.getElementById('login-step1').style.display = 'block';
+  document.getElementById('login-step2').style.display = 'none';
+  document.getElementById('login-err').style.display = 'none';
+}
+
 document.getElementById('inp-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 
 function doLogout() {
@@ -775,9 +909,9 @@ function doLogout() {
 }
 
 // ─── Navigation ────────────────────────────────────────────────
-const sections = { dashboard:'sec-dashboard', users:'sec-users', groups:'sec-groups', messages:'sec-messages', invites:'sec-invites', audit:'sec-audit' };
-const titles   = { dashboard:'数据概览', users:'用户管理', groups:'群组管理', messages:'消息记录', invites:'邀请码管理', audit:'审计日志' };
-const loaders  = { dashboard:loadDashboard, users:loadUsers, groups:loadGroups, messages:()=>loadMsgs(1), invites:loadCodes, audit:()=>loadAudit(1) };
+const sections = { dashboard:'sec-dashboard', users:'sec-users', groups:'sec-groups', messages:'sec-messages', invites:'sec-invites', audit:'sec-audit', settings:'sec-settings' };
+const titles   = { dashboard:'数据概览', users:'用户管理', groups:'群组管理', messages:'消息记录', invites:'邀请码管理', audit:'审计日志', settings:'系统设置' };
+const loaders  = { dashboard:loadDashboard, users:loadUsers, groups:loadGroups, messages:()=>loadMsgs(1), invites:loadCodes, audit:()=>loadAudit(1), settings:loadSettings };
 
 function nav(key, el) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -839,7 +973,7 @@ function loadDashboard() {
 let allUsers = [];
 function loadUsers() {
   const tbody = document.getElementById('users-tbody');
-  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:28px;color:#aaa">加载中...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:28px;color:#aaa">加载中...</td></tr>';
   api('GET', '/api/users').then(rows => {
     allUsers = rows;
     renderUsers(rows);
@@ -848,16 +982,20 @@ function loadUsers() {
 
 function renderUsers(rows) {
   const tbody = document.getElementById('users-tbody');
-  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:28px;color:#aaa">暂无用户</td></tr>'; return; }
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:28px;color:#aaa">暂无用户</td></tr>'; return; }
   tbody.innerHTML = rows.map(u => `
     <tr>
       <td><span style="color:#aaa;font-size:11.5px">#${u.id}</span></td>
       <td><strong>${esc(u.display_name)}</strong></td>
       <td><span style="color:#576b95">${esc(u.username)}</span></td>
-      <td>${esc(u.department||'-')}</td>
-      <td><span class="tag tag-blue">${esc(u.position||'-')}</span></td>
       <td><span style="font-family:monospace;font-size:12px">${esc(u.phone||'-')}</span></td>
       <td>${u.status==='online' ? '<span><span class="dot dot-green"></span>在线</span>' : '<span><span class="dot dot-gray"></span>离线</span>'}</td>
+      <td>
+        <label class="toggle-switch" title="${u.can_invite?'点击撤销邀请权限':'点击授予邀请权限'}">
+          <input type="checkbox" ${u.can_invite?'checked':''} onchange="toggleCanInvite(${u.id},this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </td>
       <td style="font-size:11.5px;color:#aaa">${fmtDate(u.created_at)}</td>
       <td>
         <div class="td-actions">
@@ -874,9 +1012,18 @@ function filterUsers() {
   const q = document.getElementById('user-search').value.toLowerCase();
   renderUsers(q ? allUsers.filter(u =>
     (u.display_name||'').toLowerCase().includes(q) ||
-    (u.username||'').toLowerCase().includes(q) ||
-    (u.department||'').toLowerCase().includes(q)
+    (u.username||'').toLowerCase().includes(q)
   ) : allUsers);
+}
+
+function toggleCanInvite(id, enabled) {
+  api('PUT', `/api/users/${id}/can-invite`, { enabled })
+    .then(r => {
+      const u = allUsers.find(x => x.id === id);
+      if (u) { u.can_invite = r.can_invite; }
+      toast(enabled ? '已授予邀请权限' : '已撤销邀请权限');
+    })
+    .catch(() => { toast('操作失败','error'); loadUsers(); });
 }
 
 function toggleUser(id, disabled) {
@@ -1095,8 +1242,6 @@ function openUserEdit(id) {
   if (!u) return;
   document.getElementById('edit-uid').value   = id;
   document.getElementById('edit-name').value  = u.display_name || '';
-  document.getElementById('edit-dept').value  = u.department   || '';
-  document.getElementById('edit-pos').value   = u.position     || '';
   document.getElementById('edit-phone').value = u.phone        || '';
   document.getElementById('edit-email').value = u.email        || '';
   document.getElementById('edit-pwd').value   = '';
@@ -1106,13 +1251,11 @@ function closeUserEdit() { document.getElementById('user-edit-overlay').classLis
 document.getElementById('user-edit-overlay').onclick = e => { if (e.target === e.currentTarget) closeUserEdit(); };
 
 async function saveUserEdit() {
-  const id    = document.getElementById('edit-uid').value;
-  const body  = {
-    display_name: document.getElementById('edit-name').value.trim() || undefined,
-    department:   document.getElementById('edit-dept').value.trim() || undefined,
-    position:     document.getElementById('edit-pos').value.trim()  || undefined,
-    phone:        document.getElementById('edit-phone').value.trim()|| undefined,
-    email:        document.getElementById('edit-email').value.trim()|| undefined,
+  const id   = document.getElementById('edit-uid').value;
+  const body = {
+    display_name: document.getElementById('edit-name').value.trim()  || undefined,
+    phone:        document.getElementById('edit-phone').value.trim() || undefined,
+    email:        document.getElementById('edit-email').value.trim() || undefined,
   };
   const pwd = document.getElementById('edit-pwd').value;
   try {
@@ -1128,7 +1271,7 @@ async function saveUserEdit() {
 function openMembersModal(gid, gname) {
   document.getElementById('members-gid').value = gid;
   document.getElementById('members-title').textContent = `群成员 — ${gname}`;
-  document.getElementById('members-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#aaa">加载中...</td></tr>';
+  document.getElementById('members-tbody').innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:#aaa">加载中...</td></tr>';
   document.getElementById('members-overlay').classList.add('show');
   api('GET', `/api/groups/${gid}/members`).then(rows => {
     const roleLabel = { owner:'群主', admin:'管理员', member:'成员' };
@@ -1137,11 +1280,10 @@ function openMembersModal(gid, gname) {
       <tr>
         <td><strong>${esc(m.display_name)}</strong></td>
         <td style="color:#576b95">${esc(m.username)}</td>
-        <td>${esc(m.department||'-')}</td>
         <td><span class="tag ${roleTag[m.role]||'tag-gray'}">${roleLabel[m.role]||m.role}</span></td>
         <td>${m.role==='owner' ? '<span style="color:#ccc;font-size:12px">群主</span>'
           : `<button class="btn btn-sm btn-danger" onclick="kickMember(${gid},${m.id},'${esc(m.display_name)}')">踢出</button>`}</td>
-      </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px;color:#aaa">暂无成员</td></tr>';
+      </tr>`).join('') : '<tr><td colspan="4" style="text-align:center;padding:20px;color:#aaa">暂无成员</td></tr>';
   }).catch(() => toast('获取成员失败','error'));
 }
 function closeMembersModal() { document.getElementById('members-overlay').classList.remove('show'); }
@@ -1224,6 +1366,85 @@ function renderAuditPagination() {
   html += `<button class="pg-btn" ${auditPage>=pages?'disabled':''} onclick="loadAudit(${auditPage+1})">›</button>`;
   html += `<button class="pg-btn" ${auditPage>=pages?'disabled':''} onclick="loadAudit(${pages})">»</button>`;
   pag.innerHTML = html;
+}
+
+// ─── Settings ─────────────────────────────────────────────────
+let _totpSetupSecret = '';
+
+function loadSettings() {
+  api('GET', '/api/settings').then(s => {
+    document.getElementById('ip-whitelist-input').value = s.admin_allowed_ips || '';
+    document.getElementById('ip-current-tip').textContent =
+      s.admin_allowed_ips ? `当前白名单：${s.admin_allowed_ips}` : '当前：不限制IP（所有人可访问）';
+  }).catch(() => {});
+  api('GET', '/api/admin/totp-status').then(r => {
+    const label = document.getElementById('totp-status-label');
+    const btnSetup   = document.getElementById('btn-totp-setup');
+    const btnDisable = document.getElementById('btn-totp-disable');
+    if (r.enabled) {
+      label.textContent = '双因素认证：已启用 ✓';
+      label.style.color = 'var(--green)';
+      btnSetup.style.display = 'none';
+      btnDisable.style.display = '';
+    } else {
+      label.textContent = '双因素认证：未启用';
+      label.style.color = '';
+      btnSetup.style.display = '';
+      btnDisable.style.display = 'none';
+    }
+    document.getElementById('totp-setup-panel').style.display = 'none';
+    document.getElementById('totp-disable-panel').style.display = 'none';
+  }).catch(() => {});
+}
+
+function startTotpSetup() {
+  api('POST', '/api/admin/totp-setup').then(r => {
+    _totpSetupSecret = r.secret;
+    document.getElementById('totp-qr-img').src = r.qrDataUrl;
+    document.getElementById('totp-manual-key').textContent = r.secret;
+    document.getElementById('totp-verify-code').value = '';
+    document.getElementById('totp-setup-err').style.display = 'none';
+    document.getElementById('totp-setup-panel').style.display = 'block';
+    document.getElementById('btn-totp-setup').style.display = 'none';
+  }).catch(() => toast('获取二维码失败','error'));
+}
+function cancelTotpSetup() {
+  _totpSetupSecret = '';
+  document.getElementById('totp-setup-panel').style.display = 'none';
+  document.getElementById('btn-totp-setup').style.display = '';
+}
+function confirmTotpEnable() {
+  const code = document.getElementById('totp-verify-code').value.trim();
+  const errEl = document.getElementById('totp-setup-err');
+  if (!code) { errEl.textContent='请输入验证码'; errEl.style.display='block'; return; }
+  api('POST', '/api/admin/totp-enable', { secret: _totpSetupSecret, code })
+    .then(() => { toast('双因素认证已启用','success'); _totpSetupSecret=''; loadSettings(); })
+    .catch(e => { errEl.textContent = e.error||'验证失败'; errEl.style.display='block'; });
+}
+
+function showTotpDisable() {
+  document.getElementById('totp-disable-code').value = '';
+  document.getElementById('totp-disable-err').style.display = 'none';
+  document.getElementById('totp-disable-panel').style.display = 'block';
+  document.getElementById('btn-totp-disable').style.display = 'none';
+}
+function cancelTotpDisable() {
+  document.getElementById('totp-disable-panel').style.display = 'none';
+  document.getElementById('btn-totp-disable').style.display = '';
+}
+function confirmTotpDisable() {
+  const code = document.getElementById('totp-disable-code').value.trim();
+  const errEl = document.getElementById('totp-disable-err');
+  api('DELETE', '/api/admin/totp-disable', { code })
+    .then(() => { toast('双因素认证已关闭'); loadSettings(); })
+    .catch(e => { errEl.textContent = e.error||'操作失败'; errEl.style.display='block'; });
+}
+
+function saveIpWhitelist() {
+  const ips = document.getElementById('ip-whitelist-input').value.trim();
+  api('PUT', '/api/settings/ip-whitelist', { ips })
+    .then(() => { toast('IP白名单已保存'); loadSettings(); })
+    .catch(() => toast('保存失败','error'));
 }
 
 // ─── Dashboard auto-refresh ───────────────────────────────────

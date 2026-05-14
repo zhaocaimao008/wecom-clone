@@ -309,7 +309,7 @@ input::placeholder, textarea::placeholder { color: var(--text-hint); }
    SIDEBAR
    ═══════════════════════════════════════════════════ */
 .sidebar {
-  width: 60px;
+  width: 72px;
   background: var(--sidebar-bg);
   display: flex;
   flex-direction: column;
@@ -332,34 +332,57 @@ input::placeholder, textarea::placeholder { color: var(--text-hint); }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   width: 100%;
-  padding: 0 10px;
+  padding: 0 6px;
 }
 
 .sidebar-bottom {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   width: 100%;
-  padding: 0 10px;
+  padding: 0 6px;
 }
 
 .nav-btn {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 100%;
+  height: auto;
+  padding: 7px 4px 5px;
   border-radius: 8px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 3px;
   color: #9a9a9a;
   transition: background 0.15s, color 0.15s;
 }
 
+.nav-btn-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+}
+
+.nav-label {
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 1;
+  color: inherit;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
 .nav-btn:hover { background: var(--sidebar-hover); color: #fff; }
 .nav-btn.active { background: var(--sidebar-active); color: #fff; }
+.nav-btn-logout { color: #8a8a8a; }
+.nav-btn-logout:hover { background: rgba(230,67,64,.15); color: #e64340; }
 
 .nav-badge {
   position: absolute;
@@ -1321,6 +1344,78 @@ input::placeholder, textarea::placeholder { color: var(--text-hint); }
 .settings-label { flex: 1; font-size: 14px; }
 .settings-value { font-size: 12px; color: var(--text-hint); }
 
+/* invite code block inside settings */
+.invite-settings-block {
+  padding: 12px 0 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+.invite-settings-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.invite-days-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.invite-days-label {
+  font-size: 12px;
+  color: var(--text-hint);
+  white-space: nowrap;
+}
+.invite-days-chips {
+  display: flex;
+  gap: 6px;
+}
+.invite-day-chip {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1.5px solid var(--border);
+  color: var(--text-secondary);
+  background: var(--hover-bg);
+  transition: all 0.15s;
+}
+.invite-day-chip:hover { border-color: var(--green); color: var(--green); background: #f0fbf4; }
+.invite-day-chip.active { border-color: var(--green); color: var(--green); background: #e8f9f0; font-weight: 600; }
+.invite-result-block {
+  background: var(--hover-bg);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+  margin-bottom: 10px;
+}
+.invite-result-code {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 8px;
+  color: var(--green);
+  font-family: monospace;
+  margin-bottom: 4px;
+}
+.invite-result-meta {
+  font-size: 11.5px;
+  color: var(--text-hint);
+  margin-bottom: 8px;
+}
+.btn-gen-invite {
+  width: 100%;
+  padding: 10px;
+  background: var(--green);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.btn-gen-invite:hover { background: var(--green-dark); }
+.btn-gen-invite:disabled { opacity: 0.6; cursor: not-allowed; }
+
 .btn-logout {
   width: 100%;
   padding: 12px;
@@ -2097,16 +2192,20 @@ input::placeholder, textarea::placeholder { color: var(--text-hint); }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
+  background: linear-gradient(150deg, #e8f4ed 0%, #dce8f0 100%);
   padding: 0 0 env(safe-area-inset-bottom);
 }
 
 .lp-box {
   width: 100%;
   max-width: 400px;
-  padding: 0 32px 40px;
+  padding: 0 36px 44px;
   display: flex;
   flex-direction: column;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  margin: 24px 16px;
 }
 
 /* Logo block */
@@ -2325,8 +2424,8 @@ input::placeholder, textarea::placeholder { color: var(--text-hint); }
 
 /* Mobile: truly full-screen, no card */
 @media (max-width: 480px) {
-  .lp-page { align-items: flex-start; }
-  .lp-box  { padding: 0 24px 40px; max-width: 100%; }
+  .lp-page { align-items: flex-start; background: #fff; }
+  .lp-box  { padding: 0 24px 40px; max-width: 100%; background: none; box-shadow: none; border-radius: 0; margin: 0; }
   .lp-logo { padding-top: 52px; }
   .lp-input, .lp-input-full { font-size: 16px; } /* prevent iOS zoom */
   .lp-prefix { font-size: 16px; }
@@ -2426,7 +2525,7 @@ input::placeholder, textarea::placeholder { color: var(--text-hint); }
     overflow: hidden;
   }
 
-  /* ── WeChat chat window: fills flex parent ── */
+  /* ── chat window: fills flex parent ── */
   .chat-panel.chat-active .chat-window {
     display: flex;
     flex-direction: column;
@@ -2436,7 +2535,7 @@ input::placeholder, textarea::placeholder { color: var(--text-hint); }
     background: #ededed;
   }
 
-  /* ── WeChat-style mobile header ── */
+  /* ── mobile header ── */
   .chat-panel.chat-active .chat-header {
     flex-shrink: 0;
     height: auto;
@@ -2875,6 +2974,9 @@ html.dark .profile-field label { color: var(--text-secondary); }
 html.dark .profile-field input { background: var(--bg4); color: var(--text-primary); border-color: var(--border); }
 html.dark .profile-settings { background: var(--bg2); border-color: var(--border); }
 html.dark .profile-settings h3 { color: var(--text-secondary); }
+html.dark .invite-day-chip { background: var(--bg3); border-color: var(--border); }
+html.dark .invite-day-chip:hover, html.dark .invite-day-chip.active { background: rgba(7,193,96,0.12); border-color: var(--green); }
+html.dark .invite-result-block { background: var(--bg3); }
 html.dark .settings-row { border-color: var(--border); }
 html.dark .settings-row:hover { background: var(--hover-bg); }
 html.dark .settings-label { color: var(--text-primary); }

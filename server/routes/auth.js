@@ -119,7 +119,7 @@ module.exports = (db) => {
   // ── Register ─────────────────────────────────────────────────────────
 
   router.post('/register', (req, res) => {
-    const { username, password, password_confirm, display_name, department, position, invite_code } = req.body;
+    const { username, password, password_confirm, display_name, invite_code } = req.body;
     if (!username || !password || !display_name) return res.status(400).json({ error: '请填写必要信息' });
     if (!invite_code) return res.status(400).json({ error: '请填写邀请码' });
     if (password.length < 6) return res.status(400).json({ error: '密码至少6位' });
@@ -133,7 +133,7 @@ module.exports = (db) => {
     }
 
     const now = new Date().toISOString();
-    const ic = db.prepare('SELECT * FROM invite_codes WHERE code=?').get(invite_code.trim().toUpperCase());
+    const ic = db.prepare('SELECT * FROM invite_codes WHERE code=?').get(invite_code.trim());
     if (!ic) return res.status(400).json({ error: '邀请码无效' });
     if (ic.expires_at < now) return res.status(400).json({ error: '邀请码已过期' });
     if (ic.use_count >= ic.max_uses) return res.status(400).json({ error: '邀请码已被使用' });
@@ -143,18 +143,21 @@ module.exports = (db) => {
     try {
       const hash = bcrypt.hashSync(password, 10);
       const result = db.prepare(
-        'INSERT INTO users (username, password, display_name, avatar_color, department, position) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(username, hash, display_name, color, department || '研发部', position || '员工');
+        'INSERT INTO users (username, password, display_name, avatar_color) VALUES (?, ?, ?, ?)'
+      ).run(username, hash, display_name, color);
       db.prepare('UPDATE invite_codes SET used_at=?, used_by=?, use_count=use_count+1 WHERE id=?')
         .run(now, String(result.lastInsertRowid), ic.id);
-      // 自动分配唯一6位密信ID
-      let userCode, tries = 0;
-      do {
-        userCode = String(crypto.randomInt(100000, 1000000));
-        tries++;
-      } while (db.prepare('SELECT id FROM users WHERE user_code = ?').get(userCode) && tries < 200);
-      db.prepare('UPDATE users SET user_code = ? WHERE id = ?').run(userCode, result.lastInsertRowid);
-      const user = db.prepare('SELECT id, username, display_name, avatar_color, department, position, status, user_code FROM users WHERE id = ?').get(result.lastInsertRowid);
+      // 自动分配唯一6位密信ID（使用 UNIQUE 索引冲突重试，避免竞态）
+      for (let tries = 0; tries < 20; tries++) {
+        const userCode = String(crypto.randomInt(100000, 1000000));
+        try {
+          db.prepare('UPDATE users SET user_code = ? WHERE id = ?').run(userCode, result.lastInsertRowid);
+          break;
+        } catch (uce) {
+          if (!uce.message?.includes('UNIQUE') || tries >= 19) throw uce;
+        }
+      }
+      const user = db.prepare('SELECT id, username, display_name, avatar_color, status, user_code FROM users WHERE id = ?').get(result.lastInsertRowid);
       const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
       res.json({ token, user });
     } catch (e) {

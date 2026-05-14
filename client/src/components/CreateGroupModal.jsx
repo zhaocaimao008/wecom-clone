@@ -66,7 +66,6 @@ export default function CreateGroupModal({ onClose }) {
                 <AvatarCircle name={u.display_name} color={u.avatar_color} size={34} radius={17} />
                 <div className="modal-member-info">
                   <span className="modal-member-name">{u.display_name}</span>
-                  <span className="modal-member-dept">{u.department}</span>
                 </div>
               </label>
             ))}

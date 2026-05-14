@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import QRCode from 'qrcode';
 import { useStore } from '../store/useStore';
 import { AvatarCircle } from './Sidebar';
@@ -36,9 +36,10 @@ function applyDarkMode(mode) {
 
 const MAX_ACCOUNTS = 15;
 
-export default function Profile() {
+export default function Profile({ section }) {
   const { currentUser, token, api, updateCurrentUser, logout,
     accounts, activeAccountIdx, switchAccount, removeAccount, showAddAccountModal } = useStore();
+  const settingsRef = useRef(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(currentUser || {});
   const [saving, setSaving] = useState(false);
@@ -50,6 +51,10 @@ export default function Profile() {
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('wc_dark') || 'system');
   const [showAccountMgmt, setShowAccountMgmt] = useState(false);
   const [privacy, setPrivacy] = useState(() => parsePrivacy(currentUser?.privacy));
+  const [inviteCode, setInviteCode] = useState(null);
+  const [inviteCanGen, setInviteCanGen] = useState(false);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteDays, setInviteDays] = useState(7);
   const avatarFileRef = useRef(null);
 
   useEffect(() => {
@@ -60,6 +65,12 @@ export default function Profile() {
     return () => mq.removeEventListener('change', handler);
   }, [darkMode]);
 
+  useEffect(() => {
+    if (section === 'settings' && settingsRef.current) {
+      settingsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [section]);
+
   // Reset form and editing state when the active account changes
   useEffect(() => {
     setForm(currentUser || {});
@@ -67,7 +78,27 @@ export default function Profile() {
     setMsg('');
     setShowAccountMgmt(false);
     setPrivacy(parsePrivacy(currentUser?.privacy));
+    setInviteCode(null);
   }, [currentUser?.id]);
+
+  useEffect(() => {
+    api('/users/invite-code/can-generate', { method: 'GET' })
+      .then(r => setInviteCanGen(r.allowed))
+      .catch(() => {});
+  }, []);
+
+  async function genInviteCode() {
+    setInviteLoading(true);
+    try {
+      const r = await api('/users/invite-code/generate', { method: 'POST', body: { days: inviteDays } });
+      setInviteCode(r);
+    } catch (e) {
+      setMsg(e.message);
+      setTimeout(() => setMsg(''), 3000);
+    } finally {
+      setInviteLoading(false);
+    }
+  }
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
 
@@ -215,7 +246,7 @@ export default function Profile() {
           {editing ? (
             <div className="profile-form">
               {[
-                { key: 'display_name', label: '姓名' },
+                { key: 'display_name', label: '昵称' },
                 { key: 'phone',        label: '手机' },
                 { key: 'email',        label: '邮箱' },
               ].map(f => (
@@ -233,7 +264,7 @@ export default function Profile() {
             <div className="profile-info">
               {[
                 { label: '账号', value: currentUser.username },
-                { label: '姓名', value: currentUser.display_name },
+                { label: '昵称', value: currentUser.display_name },
                 { label: '手机', value: currentUser.phone     || '未设置' },
                 { label: '邮箱', value: currentUser.email     || '未设置' },
               ].map(f => (
@@ -249,12 +280,25 @@ export default function Profile() {
 
         {msg && <div className="save-msg">{msg}</div>}
 
-        <div className="profile-settings">
+
+        <div className="profile-settings" ref={settingsRef}>
           <h3>设置</h3>
 
           <div className="settings-row" onClick={toggleNotify} style={{ cursor: 'pointer' }}>
             <span className="settings-icon">🔔</span>
-            <span className="settings-label">消息通知</span>
+            <div style={{ flex: 1 }}>
+              <div className="settings-label">消息通知</div>
+              {notifyOn && typeof Notification !== 'undefined' && Notification.permission === 'denied' && (
+                <div style={{ fontSize: 11, color: '#e64340', marginTop: 2 }}>
+                  浏览器已拒绝通知权限，请在地址栏手动开启
+                </div>
+              )}
+              {notifyOn && typeof Notification !== 'undefined' && Notification.permission === 'default' && (
+                <div style={{ fontSize: 11, color: '#fa9d3b', marginTop: 2 }}>
+                  点击后将请求通知权限
+                </div>
+              )}
+            </div>
             <div className={`toggle-switch ${notifyOn ? 'on' : ''}`}>
               <div className="toggle-knob" />
             </div>
@@ -335,6 +379,44 @@ export default function Profile() {
                 </button>
               ) : (
                 <div className="account-limit-tip">已达到最多 {MAX_ACCOUNTS} 个账户上限</div>
+              )}
+            </div>
+          )}
+
+          {inviteCanGen && (
+            <div className="invite-settings-block">
+              <div className="invite-settings-title">
+                <span className="settings-icon">🔗</span>
+                <span className="settings-label">生成邀请码</span>
+              </div>
+              <div className="invite-days-row">
+                <span className="invite-days-label">有效期</span>
+                <div className="invite-days-chips">
+                  {[1, 3, 7, 30].map(d => (
+                    <button
+                      key={d}
+                      className={`invite-day-chip ${inviteDays === d ? 'active' : ''}`}
+                      onClick={() => { setInviteDays(d); setInviteCode(null); }}
+                    >
+                      {d}天
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {inviteCode ? (
+                <div className="invite-result-block">
+                  <div className="invite-result-code">{inviteCode.code}</div>
+                  <div className="invite-result-meta">
+                    有效期 {inviteCode.days || inviteDays} 天 · {new Date(inviteCode.expires_at).toLocaleDateString('zh-CN')} 到期
+                  </div>
+                  <button className="btn-gen-invite" onClick={genInviteCode} disabled={inviteLoading}>
+                    再生成一个
+                  </button>
+                </div>
+              ) : (
+                <button className="btn-gen-invite" onClick={genInviteCode} disabled={inviteLoading}>
+                  {inviteLoading ? '生成中...' : '生成邀请码'}
+                </button>
               )}
             </div>
           )}
