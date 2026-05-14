@@ -165,7 +165,7 @@ module.exports = (db, io, connectedUsers) => {
 
   router.get('/me/groups', (req, res) => {
     const groups = db.prepare(`
-      SELECT cg.id,cg.name,cg.avatar_color,cg.owner_id,cg.announcement,
+      SELECT cg.id,cg.name,cg.avatar_color,cg.avatar_url,cg.owner_id,cg.announcement,
              cg.mute_all,cg.restrict_add_friend,cg.restrict_private_chat,
              cg.group_code,COUNT(gm2.user_id) as member_count,gm.role as my_role
       FROM chat_groups cg

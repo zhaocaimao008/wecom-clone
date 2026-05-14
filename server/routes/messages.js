@@ -204,7 +204,7 @@ module.exports = (db, io, connectedUsers) => {
     const privates = db.prepare(`
       SELECT
         CASE WHEN m.sender_id=? THEN m.receiver_id ELSE m.sender_id END as peer_id,
-        u.display_name as name, u.avatar_color,
+        u.display_name as name, u.avatar_color, u.avatar_url,
         m.content as last_message, m.msg_type as last_type,
         m.created_at, m.sender_id as last_sender_id,
         NULL as group_id,
@@ -233,7 +233,7 @@ module.exports = (db, io, connectedUsers) => {
 
     const groups = db.prepare(`
       SELECT
-        NULL as peer_id, cg.name, cg.avatar_color,
+        NULL as peer_id, cg.name, cg.avatar_color, cg.avatar_url,
         m.content as last_message, m.msg_type as last_type,
         m.created_at, m.sender_id as last_sender_id,
         cg.id as group_id,

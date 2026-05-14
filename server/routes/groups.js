@@ -1,6 +1,20 @@
 const express = require('express');
 const crypto = require('crypto');
+const path = require('path');
+const multer = require('multer');
 const authMiddleware = require('../middleware/auth');
+
+const GROUP_AVATAR_MIME = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const GROUP_AVATAR_EXT  = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp' };
+const groupAvatarStorage = multer.diskStorage({
+  destination: path.join(__dirname, '../uploads/avatars'),
+  filename: (_, file, cb) => cb(null, `grp-${crypto.randomUUID()}${GROUP_AVATAR_EXT[file.mimetype] || '.jpg'}`),
+});
+const groupAvatarUpload = multer({
+  storage: groupAvatarStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_, file, cb) => GROUP_AVATAR_MIME.includes(file.mimetype) ? cb(null, true) : cb(new Error('只允许上传图片')),
+});
 
 function isPrivileged(db, groupId, userId) {
   const m = db.prepare('SELECT role FROM group_members WHERE group_id=? AND user_id=?').get(groupId, userId);
@@ -161,6 +175,23 @@ module.exports = (db, io, connectedUsers) => {
     }
     members.forEach(m => emit(m.user_id, 'group_dissolved', { groupId: gid, groupName: g.name }));
     res.json({ ok: true });
+  });
+
+  // ── Group avatar upload ───────────────────────────────────────────
+  router.post('/:id/avatar', (req, res) => {
+    const gid = parseInt(req.params.id);
+    if (isNaN(gid)) return res.status(400).json({ error: '无效的群组ID' });
+    if (!isPrivileged(db, gid, req.user.id))
+      return res.status(403).json({ error: '仅群主/管理员可修改群头像' });
+    groupAvatarUpload.single('avatar')(req, res, err => {
+      if (err) return res.status(400).json({ error: err.message || '上传失败' });
+      if (!req.file) return res.status(400).json({ error: '未收到图片' });
+      const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+      db.prepare('UPDATE chat_groups SET avatar_url=? WHERE id=?').run(avatarUrl, gid);
+      const updated = groupWithCount(gid);
+      broadcastGroup(gid, 'group_updated', updated);
+      res.json(updated);
+    });
   });
 
   router.post('/:id/quit', (req, res) => {

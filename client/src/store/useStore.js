@@ -326,6 +326,30 @@ export const useStore = create((set, get) => ({
     });
   },
 
+  // 新好友接受后立即注入会话（无需等待第一条消息）
+  injectContactConversation(friend) {
+    if (!friend?.id) return;
+    set(s => {
+      if (s.conversations.some(c => c.peer_id === friend.id)) return s;
+      return {
+        conversations: [{
+          peer_id: friend.id,
+          name: friend.display_name,
+          avatar_color: friend.avatar_color,
+          avatar_url: friend.avatar_url || null,
+          last_message: null,
+          last_type: null,
+          created_at: new Date().toISOString(),
+          last_sender_id: null,
+          group_id: null,
+          unread_count: 0,
+          is_pinned: 0,
+          is_muted: 0,
+        }, ...s.conversations],
+      };
+    });
+  },
+
   // ── Group events ──────────────────────────────────────────────────────────────
   handleGroupCreated() { get().fetchContacts(); get().fetchConversations(); },
 
@@ -333,7 +357,10 @@ export const useStore = create((set, get) => ({
     set(s => ({
       groups: s.groups.map(g => g.id === group.id ? { ...g, ...group } : g),
       activeConv: s.activeConv?.id === group.id && s.activeConv?.type === 'group'
-        ? { ...s.activeConv, name: group.name } : s.activeConv,
+        ? { ...s.activeConv, name: group.name, avatarUrl: group.avatar_url } : s.activeConv,
+      conversations: s.conversations.map(c =>
+        c.group_id === group.id ? { ...c, name: group.name, avatar_url: group.avatar_url ?? c.avatar_url, avatar_color: group.avatar_color ?? c.avatar_color } : c
+      ),
     }));
     get().fetchConversations();
   },

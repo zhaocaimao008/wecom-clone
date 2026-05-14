@@ -114,6 +114,7 @@ export function connectSocket(token) {
   socket.on('friend_accepted', user => {
     useStore.getState().fetchContacts();
     useStore.getState().fetchConversations();
+    useStore.getState().injectContactConversation(user);
   });
   socket.on('friend_rejected', () => {});
 

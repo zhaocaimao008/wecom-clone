@@ -183,11 +183,19 @@ function FriendRequestList({ onClose }) {
   useEffect(() => { fetchFriendRequests(); }, []);
 
   async function handle(fromId, action) {
+    const requester = friendRequests.find(r => r.from_id === fromId);
     try {
       await api(`/users/friend-requests/${fromId}`, { method: 'PUT', body: { action } });
       setMsgs(m => ({ ...m, [fromId]: action === 'accept' ? '已添加好友' : '已忽略' }));
+      if (action === 'accept' && requester) {
+        useStore.getState().injectContactConversation({
+          id: requester.from_id,
+          display_name: requester.display_name,
+          avatar_color: requester.avatar_color,
+          avatar_url: requester.avatar_url || null,
+        });
+      }
     } catch (e) {
-      // Already processed — still clean up local state
       setMsgs(m => ({ ...m, [fromId]: '已处理' }));
     } finally {
       removeFriendRequest(fromId);

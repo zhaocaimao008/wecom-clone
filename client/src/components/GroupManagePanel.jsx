@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { useStore } from '../store/useStore';
 import { AvatarCircle } from './Sidebar';
@@ -13,7 +13,7 @@ function Toggle({ checked, onChange, disabled }) {
 }
 
 export default function GroupManagePanel({ groupId, members, onClose, onMembersChanged }) {
-  const { currentUser, departments, api, fetchConversations, fetchContacts, clearMessages, activeConv, groups } = useStore();
+  const { currentUser, departments, api, fetchConversations, fetchContacts, clearMessages, activeConv, groups, token } = useStore();
   const [tab, setTab] = useState('members');
   const [editName, setEditName] = useState('');
   const [editAnn, setEditAnn] = useState(null); // null = unchanged
@@ -21,6 +21,8 @@ export default function GroupManagePanel({ groupId, members, onClose, onMembersC
   const [addSelected, setAddSelected] = useState(new Set());
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarFileRef = useRef(null);
 
   const myMember = members.find(m => m.id === currentUser?.id);
   const myRole = myMember?.role;
@@ -68,6 +70,29 @@ export default function GroupManagePanel({ groupId, members, onClose, onMembersC
       await api(`/groups/${groupId}`, { method: 'PUT', body: { [field]: value } });
       flash(value ? '已开启' : '已关闭');
     } catch (e) { flash(e.message); }
+  }
+
+  async function handleGroupAvatarFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    try {
+      const form = new FormData();
+      form.append('avatar', file);
+      const res = await fetch(`/api/groups/${groupId}/avatar`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        useStore.getState().handleGroupUpdated(data);
+        flash('群头像已更新');
+      } else {
+        flash(data.error || '上传失败');
+      }
+    } catch { flash('上传失败'); }
+    finally { setUploadingAvatar(false); e.target.value = ''; }
   }
 
   async function saveSettings() {
@@ -201,6 +226,32 @@ export default function GroupManagePanel({ groupId, members, onClose, onMembersC
       {/* ── Settings tab ── */}
       {tab === 'settings' && (
         <div className="gm-body">
+          {/* ── Group avatar upload (owner/admin) ── */}
+          {isPrivileged && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+              <div style={{ cursor: 'pointer' }} onClick={() => avatarFileRef.current?.click()} title="点击更换群头像">
+                <AvatarCircle
+                  name={activeConv?.name}
+                  color={groupInfo.avatar_color}
+                  url={groupInfo.avatar_url}
+                  size={54} radius={12}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-main, #111)' }}>{activeConv?.name}</div>
+                <button
+                  className="avatar-upload-btn"
+                  style={{ marginTop: 4, fontSize: 12, padding: '3px 10px' }}
+                  disabled={uploadingAvatar}
+                  onClick={() => avatarFileRef.current?.click()}
+                >
+                  {uploadingAvatar ? '上传中...' : '更换群头像'}
+                </button>
+              </div>
+              <input ref={avatarFileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarFile} />
+            </div>
+          )}
+
           {/* ── Group ID & QR (owner/admin) ── */}
           {isPrivileged && (
             <GroupIdQR groupId={groupId} groupCode={groupInfo.group_code} groupName={activeConv?.name} />

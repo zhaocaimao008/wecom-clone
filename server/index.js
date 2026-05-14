@@ -116,8 +116,10 @@ function authUpload(req, res, next) {
   }
 }
 
+// Avatars are profile pictures — serve publicly so <img> tags work without Bearer auth
+app.use('/uploads/avatars', express.static(require('path').join(__dirname, 'uploads/avatars')));
+// All other uploads (voice messages, files) remain protected
 app.use('/uploads', authUpload, express.static(require('path').join(__dirname, 'uploads')));
-app.use('/uploads/avatars', authUpload, express.static(require('path').join(__dirname, 'uploads/avatars')));
 
 // ── Socket.io ───────────────────────────────────────────────────────
 const connectedUsers = new Map(); // userId (Number) → Set<socketId>

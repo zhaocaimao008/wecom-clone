@@ -108,7 +108,7 @@ export default function ChatPanel() {
         <div className="conv-items">
           {filtered.map((c) => {
             const key = c.group_id ? `g${c.group_id}` : `p${c.peer_id}`;
-            const preview = c.last_type === 'voice' ? '[语音]' : c.last_type === 'image' ? '[图片]' : c.last_message;
+            const preview = c.last_type === 'voice' ? '[语音]' : c.last_type === 'image' ? '[图片]' : (c.last_message || '');
             return (
               <div key={key}
                 className={`conv-item ${isActive(c) ? 'active' : ''} ${c.is_pinned ? 'pinned' : ''}`}
@@ -119,7 +119,7 @@ export default function ChatPanel() {
                 onContextMenu={e => { e.preventDefault(); setCtxMenu({ conv: c, x: e.clientX, y: e.clientY }); }}
               >
                 <div className="conv-avatar">
-                  <AvatarCircle name={c.name} color={c.avatar_color} size={44} radius={c.group_id ? 10 : 22} />
+                  <AvatarCircle name={c.name} color={c.avatar_color} url={c.avatar_url} size={44} radius={c.group_id ? 10 : 22} />
                   {!c.group_id && (
                     <span className={`status-dot ${c.peer_id}`} data-uid={c.peer_id} />
                   )}
