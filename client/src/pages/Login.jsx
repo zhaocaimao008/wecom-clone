@@ -101,7 +101,7 @@ export default function Login({ isModal = false, onClose = null }) {
                 <path d="M41 24c-5.5 0-10 3.7-10 8.3 0 2.4 1.3 4.6 3.4 6.1l-1.3 3.8 4.2-2c1 .3 2.1.4 3.7.4 5.5 0 10-3.7 10-8.3S46.5 24 41 24z" fill="white"/>
               </svg>
             </div>
-            <h1 className="lp-logo-title">企业密信</h1>
+            <h1 className="lp-logo-title">密信</h1>
             <p className="lp-logo-sub">连接企业，沟通未来</p>
           </div>
         )}

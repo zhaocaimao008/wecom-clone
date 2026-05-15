@@ -195,7 +195,7 @@ app.get('/api/admin/totp-status', auth, (req, res) => {
 
 app.post('/api/admin/totp-setup', auth, async (req, res) => {
   const secret = speakeasy.generateSecret({
-    name: encodeURIComponent(`企业密信后台(${req.user.username})`),
+    name: encodeURIComponent(`密信后台(${req.user.username})`),
     length: 20,
   });
   try {

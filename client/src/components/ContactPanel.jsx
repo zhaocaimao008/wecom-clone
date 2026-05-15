@@ -270,7 +270,7 @@ function AddChoose({ onId, onScan }) {
         </span>
         <div className="add-choose-info">
           <span className="add-choose-title">ID添加好友</span>
-          <span className="add-choose-sub">通过企业密信号搜索</span>
+          <span className="add-choose-sub">通过密信号搜索</span>
         </div>
         <svg viewBox="0 0 24 24" width="16" height="16" fill="#ccc"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
       </button>
@@ -322,7 +322,7 @@ function AddById({ api, onSelect }) {
         <input
           ref={inputRef}
           className="modal-input"
-          placeholder="输入6位企业密信号"
+          placeholder="输入6位密信号"
           value={q}
           inputMode="numeric"
           maxLength={6}
@@ -336,7 +336,7 @@ function AddById({ api, onSelect }) {
       {result === null && (
         <div className="add-search-hint">
           <svg viewBox="0 0 24 24" width="40" height="40" fill="#e0e0e0"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
-          <p>输入对方的6位企业密信号</p>
+          <p>输入对方的6位密信号</p>
         </div>
       )}
       {result === false && <div className="add-search-hint"><p>未找到该用户</p></div>}
@@ -346,7 +346,7 @@ function AddById({ api, onSelect }) {
             <AvatarCircle name={result.display_name} color={result.avatar_color} url={result.avatar_url} size={44} radius={22} />
             <div className="add-result-info">
               <span className="add-result-name">{result.display_name}</span>
-              <span className="add-result-sub">企业密信号：{result.user_code}</span>
+              <span className="add-result-sub">密信号：{result.user_code}</span>
             </div>
             <div className="add-result-action">
               {result.is_contact
@@ -388,8 +388,8 @@ function AddByScan({ api, onSelect, onClose }) {
             ctx.drawImage(v, 0, 0, c.width, c.height);
             const imgData = ctx.getImageData(0, 0, c.width, c.height);
             const decoded = jsQR(imgData.data, imgData.width, imgData.height);
-            if (decoded?.data?.startsWith('wecom_code:')) {
-              const code = decoded.data.replace('wecom_code:', '');
+            if (decoded?.data?.startsWith('mixin_code:')) {
+              const code = decoded.data.replace('mixin_code:', '');
               active = false;
               stopStream();
               lookupCode(code);
@@ -431,7 +431,7 @@ function AddByScan({ api, onSelect, onClose }) {
             <AvatarCircle name={found.display_name} color={found.avatar_color} url={found.avatar_url} size={44} radius={22} />
             <div className="add-result-info">
               <span className="add-result-name">{found.display_name}</span>
-              <span className="add-result-sub">企业密信号：{found.user_code}</span>
+              <span className="add-result-sub">密信号：{found.user_code}</span>
             </div>
             <div className="add-result-action">
               {found.is_contact
@@ -462,7 +462,7 @@ function AddByScan({ api, onSelect, onClose }) {
               <span className="scan-line" />
             </div>
           </div>
-          <p className="scan-tip">将对方的企业密信二维码对准框内</p>
+          <p className="scan-tip">将对方的密信二维码对准框内</p>
         </>
       )}
     </div>

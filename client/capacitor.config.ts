@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.company.wecom',
-  appName: '企业密信',
+  appId: 'com.company.mixin',
+  appName: '密信',
   webDir: 'dist',
   plugins: {
     SplashScreen: {

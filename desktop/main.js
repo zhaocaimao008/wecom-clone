@@ -68,7 +68,7 @@ function createWindow() {
     ...savedBounds,
     minWidth:  900,
     minHeight: 600,
-    title:    '企业密信',
+    title:    '密信',
     icon:     createAppIcon(),
     backgroundColor: '#f0f0f0',
     webPreferences: {
@@ -119,7 +119,7 @@ function createWindow() {
       if (process.platform !== 'darwin') {
         tray?.displayBalloon?.({
           iconType: 'info',
-          title: '企业密信',
+          title: '密信',
           content: '应用已最小化到系统托盘',
         });
       }
@@ -143,12 +143,12 @@ function createWindow() {
 // ── Tray ──────────────────────────────────────────────────────────────────────
 function createTray() {
   tray = new Tray(createTrayIcon());
-  tray.setToolTip('企业密信');
+  tray.setToolTip('密信');
 
   function buildMenu() {
     return Menu.buildFromTemplate([
       {
-        label: '打开企业密信',
+        label: '打开密信',
         click: () => { mainWindow.show(); mainWindow.focus(); },
       },
       { type: 'separator' },
@@ -325,7 +325,7 @@ ipcMain.handle('set-badge', (_, count) => {
   if (process.platform === 'win32' && mainWindow) {
     mainWindow.setOverlayIcon(count > 0 ? makeBadgeIcon(count) : null, label);
   }
-  tray?.setToolTip(count > 0 ? `企业密信 (${count}条未读)` : '企业密信');
+  tray?.setToolTip(count > 0 ? `密信 (${count}条未读)` : '密信');
 });
 
 ipcMain.handle('get-auto-start', () => app.getLoginItemSettings().openAtLogin);

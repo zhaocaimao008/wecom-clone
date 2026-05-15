@@ -352,12 +352,12 @@ function GroupIdQR({ groupId, groupCode, groupName }) {
 
   useEffect(() => {
     if (!displayCode) return;
-    QRCode.toDataURL(`wecom_group:${displayCode}`, { width: 72, margin: 1, color: { dark: '#000', light: '#fff' } })
+    QRCode.toDataURL(`mixin_group:${displayCode}`, { width: 72, margin: 1, color: { dark: '#000', light: '#fff' } })
       .then(setQrUrl).catch(() => {});
   }, [displayCode]);
 
   function openBig() {
-    QRCode.toDataURL(`wecom_group:${displayCode}`, { width: 280, margin: 2 })
+    QRCode.toDataURL(`mixin_group:${displayCode}`, { width: 280, margin: 2 })
       .then(url => { setBigUrl(url); setShowBig(true); }).catch(() => {});
   }
 

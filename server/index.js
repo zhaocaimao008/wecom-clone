@@ -75,10 +75,10 @@ app.use(express.static('public'));
 
 // ── Desktop app download ──────────────────────────────────────────────
 app.get('/download/desktop', (req, res) => {
-  const appImage = require('path').join(__dirname, '../desktop/release/企业密信-1.0.0.AppImage');
+  const appImage = require('path').join(__dirname, '../desktop/release/密信-1.0.0.AppImage');
   const { existsSync } = require('fs');
   if (existsSync(appImage)) {
-    res.download(appImage, '企业密信-1.0.0.AppImage');
+    res.download(appImage, '密信-1.0.0.AppImage');
   } else {
     res.status(404).json({ error: '安装包不存在' });
   }
@@ -88,17 +88,17 @@ app.get('/download/android', (req, res) => {
   const file = require('path').join(__dirname, '../client/android/app/build/outputs/apk/debug/app-debug.apk');
   const { existsSync } = require('fs');
   if (existsSync(file)) {
-    res.download(file, '企业密信.apk');
+    res.download(file, '密信.apk');
   } else {
     res.status(404).json({ error: 'APK 不存在' });
   }
 });
 
 app.get('/download/desktop-windows', (req, res) => {
-  const file = require('path').join(__dirname, '../desktop/release/企业密信-Windows.tar.gz');
+  const file = require('path').join(__dirname, '../desktop/release/密信-Windows.tar.gz');
   const { existsSync } = require('fs');
   if (existsSync(file)) {
-    res.download(file, '企业密信-Windows.tar.gz');
+    res.download(file, '密信-Windows.tar.gz');
   } else {
     res.status(404).json({ error: '安装包不存在' });
   }
@@ -497,4 +497,4 @@ app.get('*', (req, res) => {
   res.sendFile(require('path').join(clientDist, 'index.html'));
 });
 
-server.listen(PORT, '0.0.0.0', () => console.log(`✅ 企业密信 Server running on http://0.0.0.0:${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`✅ 密信 Server running on http://0.0.0.0:${PORT}`));

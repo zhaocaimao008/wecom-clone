@@ -205,7 +205,7 @@ export default function Profile({ section }) {
             <h2>{currentUser.display_name}</h2>
             <span className="status-online-badge">在线</span>
             <div className="profile-id-row">
-              <span className="profile-id-label">企业密信号</span>
+              <span className="profile-id-label">密信号</span>
               <span className="profile-id-value">{currentUser.user_code}</span>
             </div>
           </div>
@@ -423,7 +423,7 @@ export default function Profile({ section }) {
 
           <div className="settings-row">
             <span className="settings-icon">📱</span>
-            <span className="settings-label">关于企业密信</span>
+            <span className="settings-label">关于密信</span>
             <span className="settings-value">v4.1.0</span>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="#ccc"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg>
           </div>
@@ -443,12 +443,12 @@ function MyQRCode({ code, name }) {
 
   useEffect(() => {
     if (!code) return;
-    QRCode.toDataURL(`wecom_code:${code}`, { width: 80, margin: 1, color: { dark: '#000', light: '#fff' } })
+    QRCode.toDataURL(`mixin_code:${code}`, { width: 80, margin: 1, color: { dark: '#000', light: '#fff' } })
       .then(setQrUrl).catch(() => {});
   }, [code]);
 
   function openBig() {
-    QRCode.toDataURL(`wecom_code:${code}`, { width: 280, margin: 2 })
+    QRCode.toDataURL(`mixin_code:${code}`, { width: 280, margin: 2 })
       .then(url => { setBigUrl(url); setShowBig(true); }).catch(() => {});
   }
 
@@ -468,7 +468,7 @@ function MyQRCode({ code, name }) {
             </div>
             <div className="qr-big-body">
               <img src={bigUrl} alt="QR" className="qr-big-img" />
-              <p className="qr-big-code">企业密信号：{code}</p>
+              <p className="qr-big-code">密信号：{code}</p>
               <p className="qr-big-tip">扫一扫上面的二维码，可以添加好友</p>
             </div>
           </div>
