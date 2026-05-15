@@ -1,5 +1,4 @@
 const Database = require('better-sqlite3');
-const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const path = require('path');
 
@@ -214,97 +213,5 @@ db.exec(`
   );
 `);
 
-// Demo password reset migration: reset well-known demo accounts to a fixed password
-// (handles case where they were seeded with a random unknown password)
-;(function resetDemoPasswords() {
-  const DEMO_PWD = 'Admin2024';
-  const DEMO_USERS = ['admin','lisi','wangwu','zhaoliu','sunqi','zhouba','wujiu','zhengshi'];
-  const marker = db.prepare("SELECT id FROM users WHERE username='admin'").get();
-  if (!marker) return; // will be seeded fresh below
-  const checkUser = db.prepare("SELECT id, password FROM users WHERE username=?");
-  const updatePwd = db.prepare("UPDATE users SET password=? WHERE username=?");
-  const hash = bcrypt.hashSync(DEMO_PWD, 10);
-  DEMO_USERS.forEach(uname => {
-    const row = checkUser.get(uname);
-    if (row && !bcrypt.compareSync(DEMO_PWD, row.password)) {
-      updatePwd.run(hash, uname);
-    }
-  });
-})();
-
-// Seed demo data
-const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
-if (!existingUser) {
-  const DEMO_PWD = 'Admin2024';
-  const hash = bcrypt.hashSync(DEMO_PWD, 10);
-  const colors = ['#07c160', '#576b95', '#fa9d3b', '#e64340', '#10aec2', '#7d7d7d'];
-
-  const demoUsers = [
-    { username: 'admin',   password: hash, display_name: '张三', avatar_color: '#07c160', department: '研发部',   position: '高级工程师', phone: '13800138001', email: 'zhangsan@company.com' },
-    { username: 'lisi',    password: hash, display_name: '李四', avatar_color: '#576b95', department: '产品部',   position: '产品经理',   phone: '13800138002', email: 'lisi@company.com' },
-    { username: 'wangwu',  password: hash, display_name: '王五', avatar_color: '#fa9d3b', department: '设计部',   position: 'UI设计师',   phone: '13800138003', email: 'wangwu@company.com' },
-    { username: 'zhaoliu', password: hash, display_name: '赵六', avatar_color: '#e64340', department: '运营部',   position: '运营专员',   phone: '13800138004', email: 'zhaoliu@company.com' },
-    { username: 'sunqi',   password: hash, display_name: '孙七', avatar_color: '#10aec2', department: '研发部',   position: '前端工程师', phone: '13800138005', email: 'sunqi@company.com' },
-    { username: 'zhouba',  password: hash, display_name: '周八', avatar_color: '#7d7d7d', department: '市场部',   position: '市场经理',   phone: '13800138006', email: 'zhouba@company.com' },
-    { username: 'wujiu',   password: hash, display_name: '吴九', avatar_color: '#07c160', department: '研发部',   position: '后端工程师', phone: '13800138007', email: 'wujiu@company.com' },
-    { username: 'zhengshi',password: hash, display_name: '郑十', avatar_color: '#576b95', department: '人事部',   position: 'HR专员',     phone: '13800138008', email: 'zhengshi@company.com' },
-  ];
-
-  const insertUser = db.prepare(
-    'INSERT INTO users (username, password, display_name, avatar_color, department, position, phone, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  );
-  demoUsers.forEach(u => insertUser.run(u.username, u.password, u.display_name, u.avatar_color, u.department, u.position, u.phone, u.email));
-
-  // Add contacts for admin (user 1)
-  const insertContact = db.prepare('INSERT OR IGNORE INTO contacts (user_id, contact_id) VALUES (?, ?)');
-  for (let i = 2; i <= 8; i++) {
-    insertContact.run(1, i);
-    insertContact.run(i, 1);
-  }
-  for (let i = 2; i <= 8; i++) {
-    for (let j = 2; j <= 8; j++) {
-      if (i !== j) insertContact.run(i, j);
-    }
-  }
-
-  // Create demo groups
-  const insertGroup = db.prepare('INSERT INTO chat_groups (name, avatar_color, owner_id, announcement) VALUES (?, ?, ?, ?)');
-  const g1 = insertGroup.run('研发团队', '#07c160', 1, '欢迎加入研发团队！请遵守团队规范。');
-  const g2 = insertGroup.run('全员大群', '#576b95', 1, '公司全员群，重要通知请@所有人');
-  const g3 = insertGroup.run('产品需求讨论', '#fa9d3b', 2, '产品需求讨论群');
-
-  const insertMember = db.prepare('INSERT OR IGNORE INTO group_members (group_id, user_id, role) VALUES (?, ?, ?)');
-  [1, 5, 7].forEach(uid => insertMember.run(g1.lastInsertRowid, uid, uid === 1 ? 'owner' : 'member'));
-  for (let i = 1; i <= 8; i++) insertMember.run(g2.lastInsertRowid, i, i === 1 ? 'owner' : 'member');
-  [1, 2, 3, 5].forEach(uid => insertMember.run(g3.lastInsertRowid, uid, uid === 2 ? 'owner' : 'member'));
-
-  // Seed messages
-  const insertMsg = db.prepare('INSERT INTO messages (sender_id, receiver_id, group_id, content, msg_type, created_at) VALUES (?, ?, ?, ?, ?, ?)');
-  const now = Date.now();
-  const mins = (n) => new Date(now - n * 60000).toISOString();
-
-  insertMsg.run(2, 1, null, '你好张三，下午有空吗？我想聊一下新产品的需求', 'text', mins(120));
-  insertMsg.run(1, 2, null, '有空的，下午两点怎么样？', 'text', mins(115));
-  insertMsg.run(2, 1, null, '好的，那我们下午两点在会议室见', 'text', mins(110));
-  insertMsg.run(1, 2, null, '没问题，到时候见👍', 'text', mins(108));
-
-  insertMsg.run(3, 1, null, '张三，这是我做的新版设计稿，帮我看看', 'text', mins(60));
-  insertMsg.run(1, 3, null, '好的，我看一下', 'text', mins(58));
-  insertMsg.run(3, 1, null, '主要改了首页的banner区域和导航样式', 'text', mins(55));
-
-  insertMsg.run(4, 1, null, '周报已发，请查收', 'text', mins(30));
-  insertMsg.run(1, 4, null, '收到，辛苦了', 'text', mins(28));
-
-  insertMsg.run(1, null, g1.lastInsertRowid, '大家好，本周sprint目标已更新，请查看Jira看板', 'text', mins(200));
-  insertMsg.run(5, null, g1.lastInsertRowid, '收到，我已经看了，今天开始开发', 'text', mins(195));
-  insertMsg.run(7, null, g1.lastInsertRowid, '好的，有问题随时在群里说', 'text', mins(190));
-  insertMsg.run(1, null, g1.lastInsertRowid, '加油！有什么技术问题可以在群里讨论', 'text', mins(185));
-
-  insertMsg.run(1, null, g2.lastInsertRowid, '【公告】本周五下午3点全员大会，请大家准时参加，地点：5楼大会议室', 'text', mins(300));
-  insertMsg.run(2, null, g2.lastInsertRowid, '收到！', 'text', mins(295));
-  insertMsg.run(3, null, g2.lastInsertRowid, '好的，准时参加', 'text', mins(290));
-  insertMsg.run(8, null, g2.lastInsertRowid, '请问可以远程参加吗？', 'text', mins(280));
-  insertMsg.run(1, null, g2.lastInsertRowid, '可以的，会议链接稍后发出', 'text', mins(275));
-}
 
 module.exports = db;
