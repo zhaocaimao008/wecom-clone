@@ -1,0 +1,574 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import QRCode from 'qrcode';
+import { useStore } from '../store/useStore';
+import { AvatarCircle } from './Sidebar';
+import { SERVER } from '../config';
+import { getSocket } from '../socket';
+
+const AVATAR_COLORS = [
+  '#07c160','#576b95','#fa9d3b','#e64340','#10aec2',
+  '#7d7d7d','#722ED1','#1989FA','#FF6B6B','#4ECDC4',
+];
+
+const PRIVACY_ITEMS = [
+  { key: 'allow_search_phone',   label: '允许通过手机号添加我', defaultOn: true  },
+  { key: 'allow_search_account', label: '允许搜索我的账号',     defaultOn: true  },
+  { key: 'require_verify',       label: '加我为好友需要验证',   defaultOn: false },
+  { key: 'allow_moments',        label: '允许查看我的朋友圈',   defaultOn: true  },
+];
+
+function parsePrivacy(raw) {
+  let saved = {};
+  try { saved = raw ? JSON.parse(raw) : {}; } catch {}
+  return Object.fromEntries(PRIVACY_ITEMS.map(i => [i.key, saved[i.key] !== undefined ? saved[i.key] : i.defaultOn]));
+}
+
+function applyDarkMode(mode) {
+  const root = document.documentElement;
+  if (mode === 'on') {
+    root.classList.add('dark');
+  } else if (mode === 'off') {
+    root.classList.remove('dark');
+  } else {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.classList.toggle('dark', prefersDark);
+  }
+}
+
+const MAX_ACCOUNTS = 15;
+
+export default function Profile({ section }) {
+  const { currentUser, token, api, updateCurrentUser, logout,
+    accounts, activeAccountIdx, switchAccount, removeAccount, showAddAccountModal, showConfirm } = useStore();
+  const settingsRef = useRef(null);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState(currentUser || {});
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [notifyOn, setNotifyOn] = useState(() => localStorage.getItem('wc_notify') !== 'off');
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('wc_dark') || 'system');
+  const [showAccountMgmt, setShowAccountMgmt] = useState(false);
+  const [privacy, setPrivacy] = useState(() => parsePrivacy(currentUser?.privacy));
+  const [inviteCode, setInviteCode] = useState(null);
+  const [inviteCanGen, setInviteCanGen] = useState(false);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteDays, setInviteDays] = useState(7);
+  const avatarFileRef = useRef(null);
+
+  useEffect(() => {
+    applyDarkMode(darkMode);
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = () => { if (darkMode === 'system') applyDarkMode('system'); };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, [darkMode]);
+
+  useEffect(() => {
+    if (section === 'settings' && settingsRef.current) {
+      settingsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [section]);
+
+  // Reset form and editing state when the active account changes
+  useEffect(() => {
+    setForm(currentUser || {});
+    setEditing(false);
+    setMsg('');
+    setShowAccountMgmt(false);
+    setPrivacy(parsePrivacy(currentUser?.privacy));
+    setInviteCode(null);
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    api('/users/invite-code/can-generate', { method: 'GET' })
+      .then(r => setInviteCanGen(r.allowed))
+      .catch(() => {});
+  }, []);
+
+  async function genInviteCode() {
+    setInviteLoading(true);
+    try {
+      const r = await api('/users/invite-code/generate', { method: 'POST', body: { days: inviteDays } });
+      setInviteCode(r);
+    } catch (e) {
+      setMsg(e.message);
+      setTimeout(() => setMsg(''), 3000);
+    } finally {
+      setInviteLoading(false);
+    }
+  }
+
+  function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
+
+  async function togglePrivacy(key) {
+    const next = { ...privacy, [key]: !privacy[key] };
+    setPrivacy(next);
+    try {
+      const user = await api('/users/me', { method: 'PUT', body: { privacy: JSON.stringify(next) } });
+      updateCurrentUser(user);
+    } catch {}
+  }
+
+  async function save() {
+    setSaving(true); setMsg('');
+    try {
+      const user = await api('/users/me', { method: 'PUT', body: form });
+      updateCurrentUser(user);
+      setEditing(false);
+      setMsg('保存成功');
+      setTimeout(() => setMsg(''), 2000);
+    } catch (e) {
+      setMsg(e.message);
+    } finally { setSaving(false); }
+  }
+
+  async function handleAvatarFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    try {
+      const form = new FormData();
+      form.append('avatar', file);
+      const res = await fetch(`${SERVER}/api/users/me/avatar`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const user = await res.json();
+      if (res.ok) { updateCurrentUser(user); setShowAvatarPicker(false); }
+      else setMsg(user.error || '上传失败');
+    } catch { setMsg('上传失败'); }
+    finally { setUploadingAvatar(false); e.target.value = ''; }
+  }
+
+  async function handleColorPick(color) {
+    try {
+      const user = await api('/users/me', { method: 'PUT', body: { avatar_color: color } });
+      updateCurrentUser(user);
+      setShowAvatarPicker(false);
+    } catch (e) { setMsg(e.message); }
+  }
+
+  async function toggleNotify() {
+    const next = !notifyOn;
+    if (next && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') {
+          setMsg('请在浏览器设置中允许通知权限');
+          setTimeout(() => setMsg(''), 3000);
+          return;
+        }
+      } else if (Notification.permission === 'denied') {
+        setMsg('通知权限已被拒绝，请在浏览器设置中手动开启');
+        setTimeout(() => setMsg(''), 3000);
+        return;
+      }
+    }
+    setNotifyOn(next);
+    localStorage.setItem('wc_notify', next ? 'on' : 'off');
+  }
+
+  function cycleDark() {
+    const cycle = { system: 'on', on: 'off', off: 'system' };
+    const next = cycle[darkMode];
+    setDarkMode(next);
+    localStorage.setItem('wc_dark', next);
+  }
+
+  const darkLabel = { system: '跟随系统', on: '已开启', off: '已关闭' };
+
+  if (!currentUser) return null;
+
+  return (
+    <div className="profile-page">
+      <div className="profile-card">
+        <div className="profile-header">
+          {/* Tappable avatar */}
+          <div className="avatar-edit-wrap" onClick={() => setShowAvatarPicker(true)} title="修改头像">
+            <AvatarCircle
+              name={currentUser.display_name}
+              color={currentUser.avatar_color}
+              url={currentUser.avatar_url}
+              size={80} radius={16}
+            />
+            {/* Always-visible camera badge in corner */}
+            <div className="avatar-camera-badge">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="white">
+                <path d="M20 5h-3.17L15 3H9L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-8 12c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+              </svg>
+            </div>
+          </div>
+          <div className="profile-header-info">
+            <h2>{currentUser.display_name}</h2>
+            <span className="status-online-badge">在线</span>
+            <div className="profile-id-row">
+              <span className="profile-id-label">密信号</span>
+              <span className="profile-id-value">{currentUser.user_code}</span>
+            </div>
+          </div>
+          <MyQRCode code={currentUser.user_code} name={currentUser.display_name} />
+        </div>
+
+        {/* Avatar picker modal */}
+        {showAvatarPicker && (
+          <div className="modal-overlay" onClick={() => setShowAvatarPicker(false)}>
+            <div className="modal-box" style={{ width: 320 }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <span>修改头像</span>
+                <button className="modal-close" onClick={() => setShowAvatarPicker(false)}>✕</button>
+              </div>
+              <div className="modal-body">
+                <input ref={avatarFileRef} type="file" accept="image/*" style={{ display: 'none' }}
+                  onChange={handleAvatarFile} />
+                <button className="avatar-upload-btn" disabled={uploadingAvatar}
+                  onClick={() => avatarFileRef.current?.click()}>
+                  {uploadingAvatar ? '上传中...' : '📷 从相册选择图片'}
+                </button>
+                <div className="avatar-color-label">或选择颜色头像</div>
+                <div className="avatar-color-grid">
+                  {AVATAR_COLORS.map(c => (
+                    <div key={c} className={`avatar-color-swatch ${currentUser.avatar_color === c ? 'selected' : ''}`}
+                      style={{ background: c }}
+                      onClick={() => handleColorPick(c)}>
+                      <span>{currentUser.display_name?.slice(-2)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="profile-body">
+          {editing ? (
+            <div className="profile-form">
+              {[
+                { key: 'display_name', label: '昵称' },
+                { key: 'phone',        label: '手机' },
+              ].map(f => (
+                <div key={f.key} className="profile-field">
+                  <label>{f.label}</label>
+                  <input value={form[f.key] || ''} onChange={e => set(f.key, e.target.value)} />
+                </div>
+              ))}
+              <div className="profile-actions">
+                <button className="btn-save" onClick={save} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+                <button className="btn-cancel" onClick={() => { setEditing(false); setForm(currentUser); }}>取消</button>
+              </div>
+            </div>
+          ) : (
+            <div className="profile-info">
+              {[
+                { label: '账号', value: currentUser.username },
+                { label: '昵称', value: currentUser.display_name },
+                { label: '手机', value: currentUser.phone     || '未设置' },
+              ].map(f => (
+                <div key={f.label} className="info-row">
+                  <span className="info-label">{f.label}</span>
+                  <span className="info-value">{f.value}</span>
+                </div>
+              ))}
+              <button className="btn-edit" onClick={() => setEditing(true)}>编辑资料</button>
+            </div>
+          )}
+        </div>
+
+        {msg && <div className="save-msg">{msg}</div>}
+
+
+        <div className="profile-settings" ref={settingsRef}>
+          <h3>设置</h3>
+
+          <div className="settings-row" onClick={toggleNotify} style={{ cursor: 'pointer' }}>
+            <span className="settings-icon">🔔</span>
+            <div style={{ flex: 1 }}>
+              <div className="settings-label">消息通知</div>
+              {notifyOn && typeof Notification !== 'undefined' && Notification.permission === 'denied' && (
+                <div style={{ fontSize: 11, color: '#e64340', marginTop: 2 }}>
+                  浏览器已拒绝通知权限，请在地址栏手动开启
+                </div>
+              )}
+              {notifyOn && typeof Notification !== 'undefined' && Notification.permission === 'default' && (
+                <div style={{ fontSize: 11, color: '#fa9d3b', marginTop: 2 }}>
+                  点击后将请求通知权限
+                </div>
+              )}
+            </div>
+            <div className={`toggle-switch ${notifyOn ? 'on' : ''}`}>
+              <div className="toggle-knob" />
+            </div>
+          </div>
+
+          <div className="settings-row" style={{ cursor: 'pointer' }}
+            onClick={() => setShowPrivacy(v => !v)}>
+            <span className="settings-icon">🔒</span>
+            <span className="settings-label">隐私设置</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="#ccc"
+              style={{ transform: showPrivacy ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
+              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+            </svg>
+          </div>
+          {showPrivacy && (
+            <div className="privacy-sub">
+              {PRIVACY_ITEMS.map(item => (
+                <div key={item.key} className="settings-row privacy-row" onClick={() => togglePrivacy(item.key)} style={{ cursor: 'pointer' }}>
+                  <span className="settings-label" style={{ fontSize: 13 }}>{item.label}</span>
+                  <div className={`toggle-switch ${privacy[item.key] ? 'on' : ''}`}>
+                    <div className="toggle-knob" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="settings-row" onClick={cycleDark} style={{ cursor: 'pointer' }}>
+            <span className="settings-icon">🌙</span>
+            <span className="settings-label">深色模式</span>
+            <span className="settings-value">{darkLabel[darkMode]}</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="#ccc"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg>
+          </div>
+
+          <div className="settings-row" onClick={() => setShowAccountMgmt(v => !v)} style={{ cursor: 'pointer' }}>
+            <span className="settings-icon">👤</span>
+            <span className="settings-label">账户管理</span>
+            <span className="settings-value">{accounts.length} 个账户已登录</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="#ccc"
+              style={{ transform: showAccountMgmt ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
+              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+            </svg>
+          </div>
+          {showAccountMgmt && (
+            <div className="profile-account-list">
+              {accounts.map((acc, idx) => (
+                <div
+                  key={idx}
+                  className={`profile-account-item ${idx === activeAccountIdx ? 'active' : ''}`}
+                  onClick={() => { if (idx !== activeAccountIdx) switchAccount(idx); }}
+                >
+                  <AvatarCircle name={acc.user?.display_name} color={acc.user?.avatar_color} url={acc.user?.avatar_url} size={36} radius={8} />
+                  <div className="profile-account-info">
+                    <div className="profile-account-name">{acc.user?.display_name}</div>
+                    <div className="profile-account-sub">{acc.user?.username}</div>
+                  </div>
+                  {idx === activeAccountIdx && <span className="account-active-dot" />}
+                  <button
+                    className="account-remove-btn"
+                    onClick={async e => {
+                      e.stopPropagation();
+                      if (await showConfirm(`确认退出「${acc.user?.display_name}」？`)) removeAccount(idx);
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </svg>
+                  </button>
+                </div>
+              ))}
+              {accounts.length < MAX_ACCOUNTS ? (
+                <button className="profile-add-account-btn" onClick={showAddAccountModal}>
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                  </svg>
+                  添加账户
+                  <span className="account-add-limit">{accounts.length}/{MAX_ACCOUNTS}</span>
+                </button>
+              ) : (
+                <div className="account-limit-tip">已达到最多 {MAX_ACCOUNTS} 个账户上限</div>
+              )}
+            </div>
+          )}
+
+          {inviteCanGen && (
+            <div className="invite-settings-block">
+              <div className="invite-settings-title">
+                <span className="settings-icon">🔗</span>
+                <span className="settings-label">生成邀请码</span>
+              </div>
+              <div className="invite-days-row">
+                <span className="invite-days-label">有效期</span>
+                <div className="invite-days-chips">
+                  {[1, 3, 7, 30].map(d => (
+                    <button
+                      key={d}
+                      className={`invite-day-chip ${inviteDays === d ? 'active' : ''}`}
+                      onClick={() => { setInviteDays(d); setInviteCode(null); }}
+                    >
+                      {d}天
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {inviteCode ? (
+                <div className="invite-result-block">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div className="invite-result-code" style={{ flex: 1 }}>{inviteCode.code}</div>
+                    <button
+                      style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #07c160',
+                        color: '#07c160', background: '#fff', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}
+                      onClick={() => { navigator.clipboard.writeText(inviteCode.code); setMsg('邀请码已复制'); }}>
+                      复制
+                    </button>
+                  </div>
+                  <div className="invite-result-meta">
+                    有效期 {inviteCode.days || inviteDays} 天 · {new Date(inviteCode.expires_at).toLocaleDateString('zh-CN')} 到期
+                  </div>
+                  <button className="btn-gen-invite" onClick={genInviteCode} disabled={inviteLoading}>
+                    再生成一个
+                  </button>
+                </div>
+              ) : (
+                <button className="btn-gen-invite" onClick={genInviteCode} disabled={inviteLoading}>
+                  {inviteLoading ? '生成中...' : '生成邀请码'}
+                </button>
+              )}
+            </div>
+          )}
+
+          <SessionManager api={api} token={token} />
+
+          <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+            <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+              <span className="settings-icon">📱</span>
+              <span className="settings-label">关于密信</span>
+              <span className="settings-value" style={{ fontWeight: 600, color: '#07c160' }}>v{__APP_VERSION__}</span>
+            </div>
+            <div style={{ fontSize: 11, color: '#aaa', paddingLeft: 32 }}>构建时间：{__BUILD_TIME__}</div>
+          </div>
+        </div>
+
+        <button className="btn-logout" onClick={logout}>退出当前账户</button>
+      </div>
+    </div>
+  );
+}
+
+function SessionManager({ api, token }) {
+  const [open, setOpen]       = useState(false);
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading]  = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const socketId = getSocket()?.id || '';
+      const data = await fetch('/api/auth/sessions', {
+        headers: { Authorization: `Bearer ${token}`, 'X-Socket-Id': socketId },
+      }).then(r => r.json());
+      setSessions(Array.isArray(data) ? data : []);
+    } catch { setSessions([]); }
+    finally { setLoading(false); }
+  }
+
+  async function kickSession(socketId) {
+    await fetch(`/api/auth/sessions/${socketId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    load();
+  }
+
+  function uaLabel(ua) {
+    if (!ua || ua === 'Unknown') return '未知设备';
+    if (/Electron/i.test(ua)) return 'Windows 桌面端';
+    if (/Android/i.test(ua)) return 'Android';
+    if (/iPhone|iPad/i.test(ua)) return 'iOS';
+    if (/Mac/i.test(ua)) return 'Mac 浏览器';
+    if (/Windows/i.test(ua)) return 'Windows 浏览器';
+    return '浏览器';
+  }
+
+  function timeAgo(ts) {
+    if (!ts) return '';
+    const m = Math.floor((Date.now() - ts) / 60000);
+    if (m < 1) return '刚刚';
+    if (m < 60) return `${m} 分钟前`;
+    return `${Math.floor(m / 60)} 小时前`;
+  }
+
+  return (
+    <>
+      <div className="settings-row" style={{ cursor: 'pointer' }}
+        onClick={() => { setOpen(v => !v); if (!open) load(); }}>
+        <span className="settings-icon">💻</span>
+        <span className="settings-label">设备管理</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="#ccc"
+          style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
+          <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+        </svg>
+      </div>
+      {open && (
+        <div style={{ padding: '4px 16px 12px', background: 'rgba(0,0,0,0.02)', borderRadius: 8, margin: '0 4px 4px' }}>
+          {loading && <div style={{ fontSize: 12, color: '#999', padding: '8px 0' }}>加载中…</div>}
+          {!loading && sessions.map(s => (
+            <div key={s.socketId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>
+                  {uaLabel(s.userAgent)}
+                  {s.isCurrent && <span style={{ marginLeft: 6, fontSize: 11, color: '#07c160', background: '#e8f8ef', padding: '1px 6px', borderRadius: 10 }}>当前设备</span>}
+                </div>
+                <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>登录于 {timeAgo(s.connectedAt)}</div>
+              </div>
+              {!s.isCurrent && (
+                <button
+                  style={{ fontSize: 12, color: '#e64340', background: 'none', border: '1px solid #e64340', borderRadius: 6, padding: '3px 10px', cursor: 'pointer' }}
+                  onClick={() => kickSession(s.socketId)}
+                >
+                  踢出
+                </button>
+              )}
+            </div>
+          ))}
+          {!loading && sessions.length === 0 && (
+            <div style={{ fontSize: 12, color: '#999', padding: '8px 0' }}>暂无在线会话</div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+function MyQRCode({ code, name }) {
+  const [qrUrl, setQrUrl] = useState('');
+  const [showBig, setShowBig] = useState(false);
+  const [bigUrl, setBigUrl] = useState('');
+
+  useEffect(() => {
+    if (!code) return;
+    QRCode.toDataURL(`mixin_code:${code}`, { width: 80, margin: 1, color: { dark: '#000', light: '#fff' } })
+      .then(setQrUrl).catch(() => {});
+  }, [code]);
+
+  function openBig() {
+    QRCode.toDataURL(`mixin_code:${code}`, { width: 280, margin: 2 })
+      .then(url => { setBigUrl(url); setShowBig(true); }).catch(() => {});
+  }
+
+  if (!qrUrl) return null;
+  return (
+    <>
+      <div className="profile-qr-wrap" onClick={openBig} title="查看我的二维码">
+        <img src={qrUrl} alt="QR" className="profile-qr-img" />
+        <span className="profile-qr-hint">二维码</span>
+      </div>
+      {showBig && (
+        <div className="modal-overlay" onClick={() => setShowBig(false)}>
+          <div className="modal-box qr-big-box" onClick={e => e.stopPropagation()}>
+            <div className="qr-big-header">
+              <span>{name}的二维码</span>
+              <button className="modal-close" onClick={() => setShowBig(false)}>✕</button>
+            </div>
+            <div className="qr-big-body">
+              <img src={bigUrl} alt="QR" className="qr-big-img" />
+              <p className="qr-big-code">密信号：{code}</p>
+              <p className="qr-big-tip">扫一扫上面的二维码，可以添加好友</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

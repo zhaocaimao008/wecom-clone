@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <title>密信</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>" />
+  </head>
+  <body style="background:#1c1f27;margin:0">
+    <div id="app-loading" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:9999;pointer-events:none">
+      <div style="width:36px;height:36px;border:3px solid rgba(255,255,255,0.2);border-top-color:#07c160;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+      <span id="app-loading-text" style="color:rgba(255,255,255,0.6);font-size:14px;font-family:sans-serif">密信启动中</span>
+    </div>
+    <style>#app-loading{transition:opacity 0.3s}@keyframes spin{to{transform:rotate(360deg)}}</style>
+    <noscript><div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;background:#1c1f27">请启用 JavaScript 后刷新页面</div></noscript>
+    <script>
+      window.addEventListener('error', function(e) {
+        var txt = document.getElementById('app-loading-text');
+        if (txt) txt.textContent = 'JS加载错误: ' + (e.message || e.filename || '未知');
+        fetch('/api/client-error', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({message: e.message, source: e.filename+':'+e.lineno, kind:'html-inline-error', ua: navigator.userAgent, ts: Date.now()})
+        }).catch(function(){});
+      });
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
