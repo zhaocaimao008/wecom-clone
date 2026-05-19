@@ -223,7 +223,6 @@ function FormPanel({ initTab = 'account', isModal = false, onClose, onBackToQr }
 
       {/* Tabs */}
       <div className="fp-tabs">
-        <button className={tab === 'phone-pwd' || tab === 'phone-code' ? 'active' : ''} onClick={() => switchTab('phone-pwd')}>手机登录</button>
         <button className={tab === 'account' ? 'active' : ''} onClick={() => switchTab('account')}>账号登录</button>
         {!isModal && <button className={tab === 'register' ? 'active' : ''} onClick={() => switchTab('register')}>注册</button>}
       </div>

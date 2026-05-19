@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET;
 const rateLimit = require('express-rate-limit');
 const db = require('./db');
+const helmet = require('helmet');
 const { normalizeVoiceMessage, formatMessage } = require('./utils/normalizeMessage');
 const { pushToUser } = require('./utils/webPush');
 
@@ -42,9 +43,18 @@ const io = new Server(server, {
 if (CORS_ORIGINS.length > 0) {
   app.use(cors({ origin: CORS_ORIGINS, credentials: true }));
 } else {
-  // No origin list configured — same-origin only (no CORS headers)
   app.use(cors({ origin: false }));
 }
+
+app.set('trust proxy', 1); // behind nginx — trust X-Forwarded-For for rate-limit
+app.use(helmet({
+  contentSecurityPolicy: false, // SPA 动态内容过于复杂，单独由 nginx 管理
+  crossOriginEmbedderPolicy: false, // WebRTC 需要关闭
+}));
+app.use(helmet.hsts({ maxAge: 31536000, includeSubDomains: true }));
+app.use(helmet.noSniff());
+app.use(helmet.frameguard({ action: 'deny' }));
+app.use(helmet.xssFilter());
 
 app.use(express.json({ limit: '5mb' }));
 

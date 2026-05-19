@@ -95,6 +95,7 @@ module.exports = (db, io, qrSessions, connectedUsers = new Map(), sessionInfo = 
     const passwordToCheck = user ? user.password : '$2a$10$invalidhashplaceholderXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
     const match = await bcrypt.compare(password, passwordToCheck);
     if (!user || !match) return res.status(401).json({ error: '账号或密码错误' });
+    if (user.disabled) return res.status(403).json({ error: '账号已被禁用，请联系管理员' });
 
     loginAttempts.delete(username);
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
@@ -148,6 +149,7 @@ module.exports = (db, io, qrSessions, connectedUsers = new Map(), sessionInfo = 
 
     const user = db.prepare('SELECT * FROM users WHERE phone = ?').get(phone);
     if (!user) return res.status(404).json({ error: '用户不存在' });
+    if (user.disabled) return res.status(403).json({ error: '账号已被禁用，请联系管理员' });
 
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
     const { password: _, ...userInfo } = user;

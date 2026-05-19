@@ -2,9 +2,14 @@
 
 const webpush = require('web-push');
 
-const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY  || 'BKuWA2ICn8ReN0Ogq9i3B0gbiwc3YZH3i054NdVaKPME1zm3AUyHUgegImgbWk6JMu0QhEdMK8rSbgtyyZQkK5Q';
-const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || 'kQOcv392pPX-2tbCBYkDsh-6Fh4J94Bfwi1Ni16a7Aw';
-const VAPID_EMAIL   = process.env.VAPID_EMAIL        || 'mailto:admin@mixin.app';
+const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY;
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
+const VAPID_EMAIL   = process.env.VAPID_EMAIL || 'mailto:admin@91aigu.com';
+
+if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
+  console.error('❌ FATAL: VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be set in environment');
+  process.exit(1);
+}
 
 webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE);
 
